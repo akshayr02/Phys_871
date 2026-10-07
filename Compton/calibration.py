@@ -42,8 +42,8 @@ SOURCES = [
     },
     {
         "name": "Ba-133",
-        "file": "Grad26/analysis/bkg_sub/ba133_withgain_subtracted.txt",
-        "peaks": [(150.67, 30.973, 20), (378, 81, 50), (1500, 356.01, 150)],
+        "file": "Grad26/analysis/bkg_sub/ba133_withgain_subtracted.txt", #middle peak is optional
+        "peaks": [(150.67, 30.973, 20), (378, 81, 50), (1500, 356.01, 150)], 
     },
     {
         "name": "Na-22",
