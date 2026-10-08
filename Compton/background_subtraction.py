@@ -15,10 +15,10 @@ from scipy.optimize import curve_fit
 N_CHANNELS = 4096
 
 # change for each file
-input_path='/Users/akshayr/Library/CloudStorage/OneDrive-Personal/Documents/School_Work/Phys 871/Grad26/calibration/cs137_withgain.mca'
-output_path='/Users/akshayr/Library/CloudStorage/OneDrive-Personal/Documents/School_Work/Phys 871/Grad26/analysis/bkg_sub/cs137_withgain'
+input_path='/Users/akshayr/Phys_871/Compton/Grad26/calibration/na22_withgain.mca'
+output_path='/Users/akshayr/Phys_871/Compton/Grad26/analysis/na22_withgain.txt'
 
-bkg_path='/Users/akshayr/Library/CloudStorage/OneDrive-Personal/Documents/School_Work/Phys 871/Grad26/background_data_with_source_brick.mca'
+bkg_path='/Users/akshayr/Phys_871/Compton/Grad26/background_data_with_source_brick.mca'
 
 def load_spectrum(path, n_channels=N_CHANNELS):
     header_data = []
