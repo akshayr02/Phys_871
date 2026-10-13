@@ -1,0 +1,17 @@
+source,dalpha/alpha_30deg_percent,dalpha/alpha_40deg_percent,dalpha/alpha_60deg_percent,dalpha/alpha_70deg_percent,dalpha/alpha_80deg_percent,dalpha/alpha_90deg_percent,on_mean_percent
+Beam intensity S0 (fit),-2.86,-2.86,-2.86,-2.86,-2.86,-2.86,2.86
+Source-target distance,3.14,-0.772,-0.123,-2.9,-1.97,-1.42,0.556
+Source-detector distance,-3.08,1.02,0.401,3.18,2.28,1.76,0.804
+Detector-face depth,-4.65,1.97,4.48,4.16,3.06,0.929,2.12
+Aperture radius,6.27,-0.81,-3.81,-0.779,-1.9,5.96,0.42
+Angle offset,-5.05,-7.28,-9.21,-6.9,-13.9,-3.91,7.74
+0-deg removal fraction,-1.18,-1.64,-1.8,-2.85,-1.54,-1.54,1.78
+Forward-scatter add-back,-1.17,-1.67,-1.83,-2.87,-1.57,-1.57,1.8
+Tube lateral offset,1.19,3.11,5.08,3.95,7.84,3.27,3.83
+Tube ID/OD,-0.686,-0.918,-1.75,-3.66,-0.571,-1.45,1.47
+Steel density,0.0464,0.182,0.191,1.62,0.202,0.208,0.366
+NaI crystal size,4.08,5.79,9.46,12.2,12.9,14.7,8.34
+Relative FEP efficiency,-0.997,-1.66,-3.04,-5.04,-4.33,-4.99,2.75
+Beam-profile model,2.47,2.76,3.16,6.61,3.63,2.56,3.4
+Beam-intensity stability,-0.644,-0.706,-0.706,-0.672,-0.697,-0.7,0.693
+Pile-up (0 deg),-0.408,-0.349,-0.349,-0.333,-0.345,-0.346,0.353

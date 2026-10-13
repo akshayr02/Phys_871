@@ -1,0 +1,122 @@
+== 1. Energy calibration
+== Energy calibration (session A, Sept 24) ==
+  Ba81   E=  80.895  ch=  377.36 +- 0.18  sigma=13.6 ch
+  Ba303  E= 302.851  ch= 1272.62 +- 0.95  sigma=44.5 ch
+  Ba356  E= 356.013  ch= 1489.05 +- 0.47  sigma=48.3 ch
+  Na511  E= 510.999  ch= 2117.11 +- 1.17  sigma=64.9 ch
+  Cs662  E= 661.657  ch= 2720.11 +- 0.51  sigma=78.1 ch
+  linear: [  0.24749372 -12.34006392] chi2/ndf 4.1965968918783805 2 resid [ 0.22 -0.18 -0.63  0.79]
+  81 keV deviation from linear: [-0.15924379]
+  gain shifts check/A: {'Ba356': '+0.004%', 'Ba303': '+0.003%', 'Na511': '+0.165%', 'Cs662': '+1.988%', 'Ba81': '-0.140%'}
+  rates A: {'ba133': np.float64(1510.97), 'na22': np.float64(607.5266666666666), 'cs137': np.float64(2941.2633333333333)}  check: {'ba133': np.float64(1512.63), 'na22': np.float64(674.4966666666667), 'cs137': np.float64(14464.26)}
+  gain syst (low-rate lines) 0.095%   rate-gain syst 0.473%
+  resolution p: [-1.51655947e+01  2.91184930e-01  4.50486906e-04]  FWHM(662)/E = 0.06889269381186279
+== 2. Beam characterisation (target-out scan, pile-up, 0-deg removal)
+  no-target   0 deg: 662 photopeak =    285161 +-    812  (  950.54 /s)  total rate  2953.2 /s
+  no-target  10 deg: 662 photopeak =    186083 +-    658  (  620.28 /s)  total rate  1994.8 /s
+  no-target  20 deg: 662 photopeak =     22739 +-    287  (   75.80 /s)  total rate   452.9 /s
+  no-target  30 deg: 662 photopeak =      2707 +-     94  (    9.02 /s)  total rate   224.0 /s
+  no-target  40 deg: 662 photopeak =       800 +-     69  (    2.67 /s)  total rate   193.3 /s
+  no-target  50 deg: 662 photopeak =       298 +-     50  (    0.99 /s)  total rate   163.0 /s
+  no-target  60 deg: 662 photopeak =       287 +-     53  (    0.96 /s)  total rate   174.6 /s
+  no-target  70 deg: 662 photopeak =        85 +-     48  (    0.28 /s)  total rate   170.6 /s
+  no-target  80 deg: 662 photopeak =       128 +-     46  (    0.43 /s)  total rate   167.6 /s
+  no-target  90 deg: 662 photopeak =       112 +-     44  (    0.37 /s)  total rate   164.0 /s
+  pile-up: 1961 excess counts above 743 keV -> photopeak loss 0.69%
+  0-deg removal (Oct 6 pair): f_rem = 0.4233 +- 0.0028(st) +- 0.0085(sy); photopeak centroids target 2759.5 / no-target 2736.7;  zero_def.mca cross-check 0.4348
+== 3. Nominal chain (transmission normalisation)
+  beam profile fit (core+halo) chi2/ndf = 6.0/4
+    S0        =   3.2359e+05 +- 9.26e+03
+    psi0_deg  =       5.1228 +- 0.0786
+    w_deg     =      0.79839 +- 0.0472
+    halo      =      0.10377 +- 0.0243
+    lam_deg   =        2.969 +- 0.267
+    leak      =      0.41526 +- 0.104
+    resid/sigma: [ 0.01 -0.01  0.01 -0.08  0.26  0.29 -2.1   1.13  0.02  0.32]
+   20: alpha=1.226+-0.138  E'=609.2  Y_KN=1753  chi2=117/111
+   30: alpha=0.933+-0.140  E'=558.0  Y_KN=1498  chi2=109/116
+   40: alpha=0.851+-0.086  E'=502.1  Y_KN=1259  chi2=95/115
+   50: alpha=0.466+-0.093  E'=440.0  Y_KN=1067  chi2=126/106
+   60: alpha=0.889+-0.109  E'=405.3  Y_KN=915  chi2=89/93
+   70: alpha=0.748+-0.137  E'=353.0  Y_KN=808  chi2=87/80
+   80: alpha=0.591+-0.149  E'=315.7  Y_KN=751  chi2=64/69
+   90: alpha=0.390+-0.155  E'=294.4  Y_KN=713  chi2=64/58
+   tube OD = 2.136 cm;  systematic variations ...
+  Source-target distance       d(alpha)/alpha [%]:   -0.1   +3.1   -0.8   -0.8   -0.1   -2.9   -2.0   -1.4   dE' [keV]:  +0.3  +1.1  +0.1  -0.9  +0.4  -0.1  +0.5  +0.0
+  Source-detector distance     d(alpha)/alpha [%]:   +0.6   -3.1   +1.0   +1.1   +0.4   +3.2   +2.3   +1.8   dE' [keV]:  -0.8  -1.2  -0.1  +0.9  -0.4  +0.1  -0.5  -0.1
+  Detector-face depth          d(alpha)/alpha [%]:   +1.8   -4.6   +2.0   +6.1   +4.5   +4.2   +3.1   +0.9   dE' [keV]:  -2.0  -1.6  -0.5  +2.1  -0.5  +0.6  -2.3  -0.3
+  Aperture radius              d(alpha)/alpha [%]:   -0.6   +6.3   -0.8   -8.8   -3.8   -0.8   -1.9   +6.0   dE' [keV]:  +2.6  +1.7  +0.6  -2.5  +0.6  -0.6  +3.2  +1.1
+  Angle offset                 d(alpha)/alpha [%]:   -5.0   -5.0   -7.3   -3.9   -9.2   -6.9  -13.9   -3.9   dE' [keV]:  +0.9  +0.6  +0.3  +0.4  -0.1  +0.3  -0.2  -0.2
+  0-deg removal fraction       d(alpha)/alpha [%]:   -1.3   -1.2   -1.6   -1.6   -1.8   -2.8   -1.5   -1.5   dE' [keV]:  +0.1  +0.0  +0.1  +0.0  +0.1  +0.2  +0.1  +0.0
+  Forward-scatter add-back     d(alpha)/alpha [%]:   -1.4   -1.2   -1.7   -1.6   -1.8   -2.9   -1.6   -1.6   dE' [keV]:  +0.1  +0.0  +0.1  +0.0  +0.1  +0.2  +0.1  +0.0
+  Tube lateral offset          d(alpha)/alpha [%]:   +1.0   +1.2   +3.1   -0.2   +5.1   +3.9   +7.8   +3.3   dE' [keV]:  -0.9  -0.4  -0.2  -0.4  +0.1  -0.5  +0.7  -0.2
+  Tube ID/OD                   d(alpha)/alpha [%]:   -1.4   -0.7   -0.9   -1.7   -1.7   -3.7   -0.6   -1.5   dE' [keV]:  +0.1  +0.2  +0.3  -0.1  +0.0  -0.0  +0.1  +0.0
+  Steel density                d(alpha)/alpha [%]:   +0.2   +0.0   +0.2   +0.2   +0.2   +1.6   +0.2   +0.2   dE' [keV]:  -0.0  -0.0  -0.0  -0.0  -0.0  -0.2  -0.0  -0.0
+  NaI crystal size             d(alpha)/alpha [%]:   +3.1   +4.1   +5.8   +7.1   +9.5  +12.2  +12.9  +14.7   dE' [keV]:  +0.0  -0.1  -0.2  -0.0  -0.1  -0.2  +0.0  -0.0
+  Relative FEP efficiency      d(alpha)/alpha [%]:   -0.5   -1.0   -1.7   -2.3   -3.0   -5.0   -4.3   -5.0   dE' [keV]:  +0.0  +0.0  +0.0  -0.0  +0.0  +0.2  -0.0  +0.0
+  Beam-profile model           d(alpha)/alpha [%]:   +4.9   +2.5   +2.8   +4.0   +3.2   +6.6   +3.6   +2.6   dE' [keV]:  -0.7  -0.5  +0.0  +0.2  -0.0  -0.3  +0.1  +0.1
+  Beam-intensity stability     d(alpha)/alpha [%]:   -0.6   -0.6   -0.7   -0.7   -0.7   -0.7   -0.7   -0.7   dE' [keV]:  +0.0  +0.0  +0.0  -0.0  +0.0  -0.0  -0.0  -0.0
+  Pile-up (0 deg)              d(alpha)/alpha [%]:   -0.3   -0.4   -0.3   -0.3   -0.3   -0.3   -0.3   -0.3   dE' [keV]:  +0.0  -0.0  -0.0  +0.0  +0.0  -0.0  +0.0  +0.0
+== 4. Alternative chain (geometric normalisation)
+   tube OD = 1.300 cm;  systematic variations ...
+== 5. Material hypotheses
+  steel  transmission: OD = 2.136 cm  T0 = 0.568  <alpha> = 0.779 +- 0.049
+  steel  geometric   : OD = 1.300 cm  T0 = 0.800  <alpha> = 1.342 +- 0.091
+  Al     transmission: OD = 4.036 cm  T0 = 0.568  <alpha> = 0.563 +- 0.032
+  Al     geometric   : OD = 1.300 cm  T0 = 0.918  <alpha> = 2.608 +- 0.177
+  Cu     transmission: OD = 2.021 cm  T0 = 0.568  <alpha> = 0.824 +- 0.052
+  Cu     geometric   : OD = 1.300 cm  T0 = 0.781  <alpha> = 1.293 +- 0.088
+== 6. Target-size consistency (10-deg shadow, 0-deg removal, OD scan)
+  10-deg measured (T-N)/N = (np.float64(0.006679795662267583), np.float64(0.004992935256333637))
+  OD = 0.90 cm -> <alpha> = 2.301 +- 0.158
+  OD = 1.10 cm -> <alpha> = 1.696 +- 0.116
+  OD = 1.30 cm -> <alpha> = 1.345 +- 0.091
+  OD = 1.50 cm -> <alpha> = 1.117 +- 0.075
+  OD = 1.70 cm -> <alpha> = 0.980 +- 0.064
+  OD = 1.90 cm -> <alpha> = 0.863 +- 0.056
+  OD = 2.10 cm -> <alpha> = 0.794 +- 0.050
+  OD = 2.30 cm -> <alpha> = 0.729 +- 0.046
+== 7. Statistical combination and hypothesis tests
+  [transmission] <alpha> = 0.779 +- 0.052(stat+est) +- 0.106(syst)  chi2(const)=9.5/5   r_e = 2.487 +- 0.084 +- 0.170 fm
+     kn_abs       : chi2=7.477, ndf=6, p=0.279
+     th_abs       : chi2=24.71, ndf=6, p=0.0003859
+     kn_shape     : c=0.779, dc=0.05246, chi2=9.498, ndf=5, p=0.09077
+     th_shape     : c=0.3265, dc=0.02364, chi2=39.14, ndf=5, p=2.225e-07
+     kn_shape_tot : c=0.7677, dc=0.05343, chi2=7.546, ndf=5, p=0.1831
+     th_shape_tot : c=0.3336, dc=0.02418, chi2=29.75, ndf=5, p=1.651e-05
+  [geometric] <alpha> = 1.347 +- 0.094(stat+est) +- 0.487(syst)  chi2(const)=8.8/5   r_e = 3.271 +- 0.115 +- 0.592 fm
+     kn_abs       : chi2=6.813, ndf=6, p=0.3385
+     th_abs       : chi2=13.62, ndf=6, p=0.03424
+     kn_shape     : c=1.347, dc=0.09436, chi2=8.789, ndf=5, p=0.1178
+     th_shape     : c=0.5671, dc=0.04246, chi2=34.26, ndf=5, p=2.114e-06
+     kn_shape_tot : c=1.317, dc=0.09612, chi2=5.69, ndf=5, p=0.3376
+     th_shape_tot : c=0.5873, dc=0.04289, chi2=18.59, ndf=5, p=0.002289
+== 8. Kinematics (electron rest energy)
+  m c^2 (E0 fixed) = 522.0 +- 6.6(stat) +- 15.9(syst) keV   chi2/ndf = 4.59/5
+  m c^2, E0 free   = 504.0 +- 18.6 keV, E0 = 672.8 +- 12.8  (rho = -0.59)   chi2/ndf = 3.54/4
+  all angles: m c^2 = 511.7 +- 14.9  chi2/ndf = 6.4/7
+  no-shift (classical) chi2/ndf = 4252/6
+   20 deg [A]  E' =  606.2 +- 5.0(st) +- 0.7(cal) +- 3.8(est) keV  (KN  613.7)  sigE= 27.4  Y =    2081 +-  383(st) +-  336(est)  chi2/ndf=96.7/80  N/T=0.94 kappa=+0.0320+-0.0206
+   30 deg [A]  E' =  551.5 +- 4.5(st) +- 0.6(cal) +- 1.0(est) keV  (KN  563.8)  sigE= 26.8  Y =     948 +-  210(st) +-  129(est)  chi2/ndf=70.7/77  N/T=0.77
+   40 deg [A]  E' =  501.1 +- 3.6(st) +- 0.5(cal) +- 2.3(est) keV  (KN  507.8)  sigE= 25.0  Y =     866 +-  172(st) +-  122(est)  chi2/ndf=68.4/74  N/T=0.69
+   50 deg [B]  E' =  442.0 +- 4.9(st) +- 0.4(cal) +- 1.6(est) keV  (KN  452.4)  sigE= 24.2  Y =     569 +-  136(st) +-   50(est)  chi2/ndf=89.6/73  N/T=0.63
+   60 deg [B]  E' =  403.0 +- 3.8(st) +- 0.4(cal) +- 1.3(est) keV  (KN  401.6)  sigE= 22.5  Y =     735 +-  162(st) +-   56(est)  chi2/ndf=50.3/64  N/T=0.74
+   70 deg [B]  E' =  353.2 +- 4.9(st) +- 0.5(cal) +- 5.6(est) keV  (KN  357.3)  sigE= 20.5  Y =     592 +-  159(st) +-   92(est)  chi2/ndf=50.6/56  N/T=0.80
+   80 deg [B]  E' =  310.8 +- 5.2(st) +- 0.5(cal) +- 2.9(est) keV  (KN  319.6)  sigE= 17.1  Y =     478 +-  154(st) +-   86(est)  chi2/ndf=35.8/46  N/T=0.85
+   90 deg [B]  E' =  291.9 +- 7.9(st) +- 0.6(cal) +- 1.4(est) keV  (KN  288.3)  sigE= 14.9  Y =     260 +-  130(st) +-   37(est)  chi2/ndf=50.3/42  N/T=0.85
+  textbook linear fit (template E'): m = 511.0 +- 18.1, E0 = 671.4 +- 12.3
+  textbook linear fit (Gaussian E'): m = 512.6 +- 14.4, E0 = 665.1 +- 8.3
+  wrote tables, macros and summary
+  figure: fig_theory
+  figure: fig_setup
+  figure: fig_calibration
+  figure: fig_spectra
+  figure: fig_netfits
+  figure: fig_beam
+  figure: fig_efficiency
+  figure: fig_target
+  figure: fig_kinematics
+  figure: fig_xsec
+  figure: fig_calibration_curve
+  figure: fig_calibration_spectra
+done in 294 s
