@@ -38,20 +38,20 @@ output_path='/Users/akshayr/Phys_871/Compton/Grad26/calibration/'
 SOURCES = [
     {
         "name": "Cs-137",
-        "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/cs137_withgain.txt_subtracted.txt",
+        "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/cs137_withgain_subtracted.txt",
         # "file": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/cs137_withgain.mca",
         "peaks": [(2711.87, 661.657, 200)],
     },
     {
         "name": "Ba-133",
-        "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/ba133_withgain.txt_subtracted.txt", #middle peak is optional
+        "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/ba133_withgain_subtracted.txt", #middle peak is optional
         # "file": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/ba133_withgain.mca", #middle peak is optional
         # "peaks": [(150.67, 30.973, 20), (378, 81, 50), (1500, 356.01, 150)], 
         "peaks": [(150.67, 30.973, 20), (1500, 356.01, 150)], 
     },
     {
         "name": "Na-22",
-        "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/na22_withgain.txt_subtracted.txt",
+        "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/na22_withgain_subtracted.txt",
         # "file": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/na22_withgain.mca",
         "peaks": [(2119, 511.0, 150)],
     },
@@ -125,8 +125,8 @@ def refine_centroid(channels, counts, guess, half_width):
         mu_err_scaled = mu_err * np.sqrt(max(red_chi2, 1.0))
         fwhm = 2*np.sqrt(np.log(2)) * abs(popt[2])
         fwhm_err = 2*np.sqrt(np.log(2)) * np.sqrt(pcov[2, 2])
-        print("fwhm: ", fwhm, fwhm_err)
-        print("red_chi2, mu_err, mu_err_scaled ", red_chi2, mu_err, mu_err_scaled)
+        print("fwhm, fwhm_err: ", fwhm, fwhm_err)
+        print("red_chi2, mu_err, mu_err_scaled: ", red_chi2, mu_err, mu_err_scaled)
 
         return popt[1], mu_err_scaled, fwhm_err
     except (RuntimeError, ValueError):
@@ -235,6 +235,8 @@ def main():
     axr.grid(alpha=0.3)
     fig1.suptitle("Energy calibration")
     fig1.tight_layout()
+    plt.savefig("energy_calibration_4p.pdf", format="pdf", bbox_inches="tight")
+
 
     # ---- plot 2: calibrated spectra ----
     fig2, axes = plt.subplots(len(SOURCES), 1, figsize=(9, 3 * len(SOURCES)), sharex=True)
@@ -254,6 +256,7 @@ def main():
         a.grid(alpha=0.3)
     axes[-1].set_xlabel("Energy (keV)")
     fig2.tight_layout()
+    plt.savefig("calibrated_spectra_4p.pdf", format="pdf", bbox_inches="tight")
 
     # ---- save calibrated spectra ----
     if SAVE_CALIBRATED:

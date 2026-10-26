@@ -15,10 +15,10 @@ from scipy.optimize import curve_fit
 N_CHANNELS = 4096
 
 # change for each file
-input_path='/Users/akshayr/Phys_871/Compton/Grad26/calibration/na22_withgain.mca'
-output_path='/Users/akshayr/Phys_871/Compton/Grad26/analysis/na22_withgain.txt'
+input_path='/Users/akshayr/Phys_871/Compton/Grad26/calibration/cs137_withgain.mca'
+output_path='/Users/akshayr/Phys_871/Compton/Grad26/analysis/cs137_withgain_subtracted.txt'
 
-bkg_path='/Users/akshayr/Phys_871/Compton/Grad26/background_data_with_source_brick.mca'
+bkg_path='/Users/akshayr/Phys_871/Compton/Grad26/calibration/bkg_withgain_850.mca'
 
 def load_spectrum(path, n_channels=N_CHANNELS):
     header_data = []
@@ -26,7 +26,7 @@ def load_spectrum(path, n_channels=N_CHANNELS):
     channels = []
     is_data_section = False
     with open(path, "r", encoding="iso-8859-15") as file:
-        i = 1
+        i = 0
         for line in file:
             cleaned_line = line.strip()
             
@@ -68,7 +68,7 @@ def main():
             new_val = 0
         subtracted.append(new_val)
 
-    out = f"{output_path}_subtracted.txt"
+    out = f"{output_path}"
     np.savetxt(out, np.column_stack([ch, subtracted]),
         header="subtracted counts", fmt=["%.5f", "%.0f"])
     print(f"Saved {out}")
