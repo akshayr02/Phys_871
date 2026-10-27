@@ -235,7 +235,7 @@ def main():
     axr.grid(alpha=0.3)
     fig1.suptitle("Energy calibration")
     fig1.tight_layout()
-    plt.savefig("energy_calibration_4p.pdf", format="pdf", bbox_inches="tight")
+    plt.savefig("plots/energy_calibration_4p.pdf", format="pdf", bbox_inches="tight")
 
 
     # ---- plot 2: calibrated spectra ----
@@ -256,7 +256,7 @@ def main():
         a.grid(alpha=0.3)
     axes[-1].set_xlabel("Energy (keV)")
     fig2.tight_layout()
-    plt.savefig("calibrated_spectra_4p.pdf", format="pdf", bbox_inches="tight")
+    plt.savefig("plots/calibrated_spectra_4p.pdf", format="pdf", bbox_inches="tight")
 
     # ---- save calibrated spectra ----
     if SAVE_CALIBRATED:
