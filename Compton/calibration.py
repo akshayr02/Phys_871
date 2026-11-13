@@ -19,7 +19,7 @@ Usage:
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
-import centroid_uncertainty
+# import centroid_uncertainty
 
 # =============================== CONFIG ====================================
 
@@ -47,6 +47,7 @@ SOURCES = [
         "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/ba133_withgain_subtracted.txt", #middle peak is optional
         # "file": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/ba133_withgain.mca", #middle peak is optional
         # "peaks": [(150.67, 30.973, 20), (378, 81, 50), (1500, 356.01, 150)], 
+        # "peaks": [(378, 81, 50), (1250, 302.9, 100), (1500, 356.01, 150)], # ai peaks
         "peaks": [(150.67, 30.973, 20), (1500, 356.01, 150)], 
     },
     {
@@ -59,47 +60,18 @@ SOURCES = [
 
 # ===========================================================================
 
+fitting_x = []
 
 def load_spectrum(path, n_channels=N_CHANNELS):
     channel, counts = np.loadtxt(path, unpack=True)
     return channel, counts
 
-# def load_spectrum(path, n_channels=N_CHANNELS):
-#     header_data = []
-#     channel_counts = []
-#     channels = []
-#     is_data_section = False
-#     with open(path, "r", encoding="iso-8859-15") as file:
-#         i = 1
-#         for line in file:
-#             cleaned_line = line.strip()
-            
-#             # Identify where the raw channel data begins and ends
-#             if cleaned_line == "<<DATA>>":
-#                 is_data_section = True
-#                 continue
-#             elif cleaned_line == "<<END>>":
-#                 is_data_section = False
-#                 continue
-                
-#             # Parse lines based on whether they are configuration metadata or channel counts
-#             if is_data_section:
-#                 if cleaned_line:  # Ensure the line isn't empty
-#                     channel_counts.append(int(cleaned_line))
-#                     channels.append(i)
-#                     i+=1
-#             else:
-#                 header_data.append(cleaned_line)
-#         # for line in header_data:
-#         #     if "LIVE_TIME" in line:
-#         #         live_time = line[12:]
-#         #         print(live_time)
-#         #         break
-#     return channels, channel_counts
-
 def gauss_lin(x, amp, mu, sigma, m, c):
     return amp * np.exp(-0.5 * ((x - mu) / sigma) ** 2) + m * x + c
 
+def quad_sum(*terms):
+    """sqrt(sum of squares) of independent uncertainties."""
+    return np.sqrt(sum(np.square(np.asarray(t, dtype=float)) for t in terms))
 
 def refine_centroid(channels, counts, guess, half_width):
     """Fit a Gaussian + linear background near `guess`.
@@ -107,6 +79,7 @@ def refine_centroid(channels, counts, guess, half_width):
     lo = max(int(guess - half_width), 0)
     hi = min(int(guess + half_width) + 1, len(counts))
     x = channels[lo:hi]
+    fitting_x.append(x)
     y = counts[lo:hi]
     if len(x) < 6:
         return guess, np.nan
@@ -116,7 +89,8 @@ def refine_centroid(channels, counts, guess, half_width):
     try:
         popt, pcov = curve_fit(gauss_lin, x, y, p0=p0, sigma=sigma_y,
                                absolute_sigma=False, maxfev=10000)
-        mu_err = np.sqrt(pcov[1, 1])
+        perr = np.sqrt(np.diag(pcov))
+        mu_err = perr[1]
         if not np.isfinite(mu_err) or abs(popt[1] - guess) > half_width:
             raise RuntimeError("unreliable fit")
         
@@ -124,34 +98,18 @@ def refine_centroid(channels, counts, guess, half_width):
         red_chi2 = np.sum(resid**2) / (len(x) - 5)
         mu_err_scaled = mu_err * np.sqrt(max(red_chi2, 1.0))
         fwhm = 2*np.sqrt(np.log(2)) * abs(popt[2])
-        fwhm_err = 2*np.sqrt(np.log(2)) * np.sqrt(pcov[2, 2])
+        fwhm_err = 2*np.sqrt(np.log(2)) * perr[2]
         print("fwhm, fwhm_err: ", fwhm, fwhm_err)
         print("red_chi2, mu_err, mu_err_scaled: ", red_chi2, mu_err, mu_err_scaled)
 
-        return popt[1], mu_err_scaled, fwhm_err
+        return popt[1], mu_err_scaled, fwhm_err, popt
     except (RuntimeError, ValueError):
         print(f"  Warning: Gaussian refit failed near channel {guess}; using given centroid.")
         return guess, np.nan
 
-# def final_error(counts, lo, hi, centroid_error):
-#     error_list = []
-
-#     mca_error = centroid_uncertainty.mca_peak_stats(counts, lo, hi, 4096)
-#     error_list.append(mca_error)
-
-#     error_list.append(centroid_error)
-
-#     # angular_error = centroid_uncertainty.compton_energy_error_from_angle()
-#     # error_list.append(angular_error)
-
-#     #[mca_error, centroid_error, angular_error] per peak
-
-#     print("error list: ", error_list)
-#     print("combined error: ", centroid_uncertainty.quad_sum(error_list))
-
 def main():
     spectra = {}
-    cal_ch, cal_E, cal_err, cal_label = [], [], [], []
+    cal_ch, cal_E, cal_err, cal_label, fit_params = [], [], [], [], []
 
     # ---- load spectra and gather calibration points ----
     for src in SOURCES:
@@ -162,20 +120,21 @@ def main():
         for centroid, energy, hw in src["peaks"]:
             err = np.nan
             if REFINE_CENTROIDS:
-                centroid, err, fwhm_err = refine_centroid(ch, counts, centroid, hw)
+                centroid, err, fwhm_err, popt_fit = refine_centroid(ch, counts, centroid, hw)
 
-            # angular_error = centroid_uncertainty.angular_sigma
-            combined_error = centroid_uncertainty.quad_sum(err, fwhm_err)
+            combined_error = quad_sum(err, fwhm_err)
 
             cal_ch.append(centroid)
             cal_E.append(energy)
             cal_err.append(combined_error)
             cal_label.append(src["name"])
+            fit_params.append(popt_fit)
 
     cal_ch = np.array(cal_ch, dtype=float)
     cal_E = np.array(cal_E, dtype=float)
     cal_err = np.array(cal_err, dtype=float)
 
+    print(cal_ch)
     n_pts = len(cal_ch)
     if n_pts < FIT_ORDER + 1:
         raise ValueError(f"Need at least {FIT_ORDER + 1} peaks for an order-{FIT_ORDER} fit, got {n_pts}.")
@@ -195,17 +154,22 @@ def main():
         coeffs, cov = np.polyfit(cal_ch, cal_E, FIT_ORDER), None
 
     calib = np.poly1d(coeffs)
+    print("COEFFS: ", coeffs)
+    print("COV:", cov)
     
     residuals = cal_E - calib(cal_ch)
-    print("red_chi2 of calibration fit: ", np.sum((residuals/cal_err)**2) / (n_pts - len(coeffs)))
+    red_chi2_fit = np.sum((residuals/cal_err)**2) / (n_pts - len(coeffs))
+    print("red_chi2 of calibration fit: ", red_chi2_fit)
 
     # ---- report ----
     print("\n=========== Calibration result ===========")
     names = [f"a{i}" for i in range(FIT_ORDER, -1, -1)]
     for i, (n, c) in enumerate(zip(names, coeffs)):
+        print(i)
         unc = f" +/- {np.sqrt(cov[i, i]):.3e}" if cov is not None else ""
         power = FIT_ORDER - i
         print(f"  {n} (ch^{power}) = {c:.6e}{unc}")
+
     terms = " + ".join(f"{c:.6g}*ch^{FIT_ORDER - i}" for i, c in enumerate(coeffs))
     print(f"  E(keV) = {terms}")
     print(f"  RMS residual = {np.sqrt(np.mean(residuals**2)):.3f} keV\n")
@@ -214,6 +178,21 @@ def main():
     for lab, c, e, r in zip(cal_label, cal_ch, cal_E, residuals):
         print(f"  {lab:<8}{c:>10.2f}{e:>10.3f}{e - r:>10.3f}{r:>9.3f}")
 
+    # converting uncertainties to energy
+    slope = coeffs[0]
+    slope_unc = np.sqrt(cov[0, 0])
+    intercept = coeffs[1]
+    intercept_unc = np.sqrt(cov[1, 1])
+
+    cal_err_E = []
+    for i in range(len(cal_ch)):
+        slope_unc_rel = slope_unc/slope
+        channel_unc_rel = cal_err[i]/cal_ch[i]
+        val = np.sqrt((slope*cal_ch[i])**2 * ((slope_unc_rel)**2 + (channel_unc_rel)**2) + intercept_unc**2)
+        cal_err_E.append(val)
+
+    cal_err_E = np.array(cal_err_E, dtype=float)
+    
     # ---- plot 1: calibration curve + residuals ----
     fig1, (ax, axr) = plt.subplots(
         2, 1, figsize=(7, 6), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
@@ -234,6 +213,25 @@ def main():
     ax.grid(alpha=0.3)
     axr.grid(alpha=0.3)
     fig1.suptitle("Energy calibration")
+
+    nl = "\n"
+    text_str=fr"y = {slope:.3f}x + ({intercept:.3f}){nl}Reduced $\chi^2$ = {red_chi2_fit:.2f}"
+    box_properties = dict(
+        boxstyle="round,pad=0.5",  # Shape of the box
+        facecolor="white",  # Background color
+        edgecolor="gray",  # Border color
+        alpha=0.5,  # Transparency
+    )
+    ax.text(
+        0.6,
+        0.95,
+        text_str,
+        transform=ax.transAxes,
+        fontsize=9,
+        verticalalignment="top",
+        bbox=box_properties,
+    )
+
     fig1.tight_layout()
     plt.savefig("plots/energy_calibration_4p.pdf", format="pdf", bbox_inches="tight")
 
@@ -241,6 +239,7 @@ def main():
     # ---- plot 2: calibrated spectra ----
     fig2, axes = plt.subplots(len(SOURCES), 1, figsize=(9, 3 * len(SOURCES)), sharex=True)
     axes = np.atleast_1d(axes)
+    i=0
     for a, src in zip(axes, SOURCES):
         ch, counts = spectra[src["name"]]
         energy = calib(ch)
@@ -249,11 +248,19 @@ def main():
             a.axvline(e_known, color="gray", ls="--", lw=0.8)
             a.annotate(f"{e_known:g}", (e_known, 1), xycoords=("data", "axes fraction"),
                        xytext=(2, -10), textcoords="offset points", fontsize=8, color="gray")
+            
+            # plot the gaussian fitting curve
+            popt = fit_params[i]
+            y_fit = gauss_lin(fitting_x[i], *popt)
+            a.plot(calib(fitting_x[i]), y_fit, label="Fit", color="C3")
+            i += 1
         if LOG_Y:
             a.set_yscale("log")
+
         a.set_ylabel("Counts")
         a.set_title(src["name"], loc="left", fontsize=10)
         a.grid(alpha=0.3)
+
     axes[-1].set_xlabel("Energy (keV)")
     fig2.tight_layout()
     plt.savefig("plots/calibrated_spectra_4p.pdf", format="pdf", bbox_inches="tight")
