@@ -1,11 +1,12 @@
 """
 Main file to perform the analysis
 
-- Perform the peak fitting to find the peak energy for each angle
-- Calculate the energy over angle plots after background subtraction
+- Perform the peak fitting to find the peak energy for each angle (done)
+- Calculate the energy over angle plots after background subtraction (done)
 - Calculate yield ratio of the no target runs
-- Plot 1/E' vs. 1-cos(theta), calculate find the line of best fit and get the slope
+- Plot 1/E' vs. 1-cos(theta), calculate find the line of best fit and get the slope (done)
 - Calculate the differential cross section and plot against scattering angle
+- Propagate all the uncertainties to the final results and error bars in final plots
 
 Usage:
     python3 analysis.py
@@ -15,6 +16,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.ndimage import gaussian_filter1d
+import scipy.odr as odr
 import centroid_uncertainty
 import calibration
 
@@ -22,23 +24,30 @@ FWHM_PER_SIGMA = 2.3548
 LOG_Y = False
 angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
 hw = 100
-coeffs = [0.2409711, -4.984605]
-# coeffs = [ 0.24295364, -9.86526721]
 
-cov = np.array([[ 3.91839524e-09, -1.22045553e-06], [-1.22045553e-06,  1.72004708e-03]], dtype=float)
-# cov = np.array([[ 6.90441679e-09, -7.44911045e-06], [-7.44911045e-06,  1.46092587e-02]], dtype=float)
-calib = np.poly1d(coeffs)
+# import calibration data from csv file
+d = np.atleast_1d(np.genfromtxt("calib_results.csv", delimiter=",", names=True))
+slope, slope_unc, intercept, intercept_unc, sys_err_keV = d["slope"], d["slope_unc"], d["intercept"], d["intercept_unc"], d["sys_err_keV"] 
+coeffs = {}
+coeffs["values"] = (slope[0], intercept[0])
+coeffs["uncertainties"] = (slope_unc[0], intercept_unc[0])
+coeffs["sys_err"] = sys_err_keV[0]
+
+calib = np.poly1d(coeffs["values"])
 
 energy_guesses=[631, 590, 640, 640, 640, 640, 640, 640, 640, 640, 640, 540, 500, 425, 414, 360, 300, 265]
-hws=[300, 150, 100, 100, 100, 100, 100, 100, 100, 100, 100, 70, 150, 250, 150, 150, 100, 100]
+# hws=[300, 150, 100, 100, 100, 100, 100, 100, 100, 100, 100, 70, 150, 250, 150, 150, 100, 100]
 
 PEAKS = {} # start off with guess of 2700 channel for angle=10
 
 def energy_to_channel(energy):
-    return (energy - coeffs[1])/coeffs[0]
+    slope, intercept = coeffs["values"]
+    print(slope, intercept)
+    return (energy - intercept)/slope
 
 for i in range(len(angles)):
     PEAKS[int(angles[i])] = (energy_to_channel(energy_guesses[i]), 150)
+# print(PEAKS)
 
 def load_spectrum(path):
     channel, counts = np.loadtxt(path, unpack=True)
@@ -58,10 +67,8 @@ def quad_sum(*terms):
     return np.sqrt(sum(np.square(np.asarray(t, dtype=float)) for t in terms))
 
 def channel_to_energy(ch, ch_err):
-    slope = coeffs[0]
-    slope_unc = np.sqrt(cov[0, 0])
-    intercept = coeffs[1]
-    intercept_unc = np.sqrt(cov[1, 1])
+    slope, intercept = coeffs["values"]
+    slope_unc, intercept_unc = coeffs["uncertainties"]
 
     peak_E = calib(ch)
 
@@ -162,8 +169,7 @@ def main():
 
         peak_energy, energy_err = channel_to_energy(mean, combined_error)
         peak_energies.append(peak_energy)
-        print("energy: ", peak_energy)
-        energy_errs.append(energy_err)
+        energy_errs.append(quad_sum(energy_err, coeffs["sys_err"])) # also add the systematic error from calib
 
         # plotting
         view = np.abs(ch - centroid_guess) <= 1.5 * hw
@@ -196,7 +202,6 @@ def main():
     channel_errs = channel_errs[:2] + channel_errs[11:]
     peak_energies = peak_energies[:2] + peak_energies[11:]
     energy_errs = energy_errs[:2] + energy_errs[11:]
-    print(angles)
     angles = angles[:2] + angles[11:]
 
     peak_channels = np.array(peak_channels, dtype=float)
@@ -204,8 +209,8 @@ def main():
     peak_energies = np.array(peak_energies, dtype=float)
     energy_errs = np.array(energy_errs, dtype=float)
 
-    print(peak_channels)
-    print(channel_errs)
+    # print(peak_channels)
+    # print(channel_errs)
     print(peak_energies.shape)
     print(energy_errs.shape)
 
@@ -241,11 +246,11 @@ def main():
 
     # plotting e over angle
     x = np.array(angles, dtype=int)
-    angle_err = angular_error()
+    angle_err = angular_error()/2
 
     fig, ax1 = plt.subplots()
-    ax1.scatter(x, peak_energies, marker='o', label='energy', zorder=2)
-    ax1.errorbar(x, peak_energies, yerr=energy_errs, xerr=angle_err/2, label='error', fmt='none', color='C7', zorder=1)
+    ax1.scatter(x, peak_energies, marker='o', label='data', zorder=2)
+    ax1.errorbar(x, peak_energies, yerr=energy_errs, xerr=angle_err, label='error', fmt='none', color='C7', zorder=1)
     ax1.set_xlabel('Angle (deg)')
     ax1.set_ylabel('Energy (keV)')
     ax1.grid(alpha=0.3)
@@ -256,23 +261,51 @@ def main():
     fig.clf()
 
     # plotting inverse energy fit
+
     cos_x = np.array(1-np.cos(np.radians(x)), dtype=float)
     y=1/(peak_energies/1000) # convert to MeV so the y scale has less decimal places
 
-    m, b = np.polyfit(cos_x, y, deg=1)
+    # first calculate the uncertainties for x and y error bars
+    cos_x_errs = np.abs(np.sin(np.radians(x)))*np.radians(angle_err)
+    y_errs = (energy_errs/peak_energies)*y
+
+    # need to do a linear ODR fit since we have x and y errors
+
+    # 1. Define a linear model: y = beta[0] + beta[1] * x
+    linear_model = odr.Model(lambda beta, x: beta[0] + beta[1] * x)
+
+    # 2. Package data and standard deviation errors into RealData
+    data = odr.RealData(cos_x, y, sx=cos_x_errs, sy=y_errs)
+
+    # 3. Set up ODR with initial parameter guesses [intercept, slope]
+    odr_instance = odr.ODR(data, linear_model, beta0=[1.50, 1.96])
+
+    # 4. Run the regression
+    output = odr_instance.run()
+    output.pprint()
+
+    m, b = output.beta[1], output.beta[0]
+    m_err, b_err = output.sd_beta[1], output.sd_beta[0]
+
     print(m, b)
-    print("mc^2 = " + str(1/m) + "MeV?")
-    print("energy of incoming photon = " + str(1/b) + "MeV?")
-    
+
+    e_mass = 1/m
+    e_mass_unc = ((m_err/m)*m)/2
+    print(f"mc^2 = {e_mass:.3f} +/- {e_mass_unc:.3f} MeV")
+
+    g_energy = 1/b
+    g_energy_unc = ((b_err/b)*b)/2
+    print(f"energy of incoming photon = {g_energy:.3f} +/- {g_energy_unc:.3f} MeV")
+
     fig, ax1 = plt.subplots()
-    ax1.scatter(cos_x, y, marker='o', label='data')
-    # ax1.errorbar(x, 1/peak_energies, yerr=energy_errs, xerr=angle_err/2, label='error', fmt='none')
-    ax1.plot(cos_x, m * cos_x + b, color='red', label=f'Best fit: y = {m:.2f}x + {b:.2f}')
+    h_data = ax1.scatter(cos_x, y, marker='o', label='data', zorder=2)
+    h_err = ax1.errorbar(cos_x, y, yerr=y_errs/2, xerr=cos_x_errs, label='error', fmt='none', color='C7', zorder=1)
+    h_fit, = ax1.plot(cos_x, m * cos_x + b, color='red', label=f'Best fit: y = {m:.2f}x + {b:.2f}', zorder=3)
     ax1.set_xlabel('1-cos(theta)')
     ax1.set_ylabel("1/E'")
     ax1.grid(alpha=0.3)
     ax1.set_title('Cs-137 Compton energy shift')
-    ax1.legend()
+    ax1.legend(loc="upper left", handles=[h_data, h_err, h_fit])
     fig.tight_layout()
     fig.savefig("plots/compton_energy_shift.pdf", format="pdf", bbox_inches="tight")
     

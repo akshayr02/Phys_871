@@ -100,7 +100,7 @@ def refine_centroid(channels, counts, guess, half_width):
         fwhm = 2*np.sqrt(np.log(2)) * abs(popt[2])
         fwhm_err = 2*np.sqrt(np.log(2)) * perr[2]
         print("fwhm, fwhm_err: ", fwhm, fwhm_err)
-        print("red_chi2, mu_err, mu_err_scaled: ", red_chi2, mu_err, mu_err_scaled)
+        print("red_chi2, mu_err, mu_err_scaled", red_chi2, mu_err, mu_err_scaled)
 
         return popt[1], mu_err_scaled, fwhm_err, popt
     except (RuntimeError, ValueError):
@@ -109,7 +109,7 @@ def refine_centroid(channels, counts, guess, half_width):
 
 def main():
     spectra = {}
-    cal_ch, cal_E, cal_err, cal_label, fit_params = [], [], [], [], []
+    cal_ch, cal_E, cal_err, cal_label, fit_params, residuals = [], [], [], [], [], []
 
     # ---- load spectra and gather calibration points ----
     for src in SOURCES:
@@ -178,12 +178,21 @@ def main():
     for lab, c, e, r in zip(cal_label, cal_ch, cal_E, residuals):
         print(f"  {lab:<8}{c:>10.2f}{e:>10.3f}{e - r:>10.3f}{r:>9.3f}")
 
-    # converting uncertainties to energy
+    dof = n_pts - (FIT_ORDER + 1)
+    sys_err_keV = np.sqrt(np.sum(residuals**2) / dof)
+    print("sys err:", sys_err_keV)
+
+    # export calibration coeffs and their uncertainties, and sys err
     slope = coeffs[0]
     slope_unc = np.sqrt(cov[0, 0])
     intercept = coeffs[1]
     intercept_unc = np.sqrt(cov[1, 1])
-
+    output_list = []
+    output_list.append((slope, slope_unc, intercept, intercept_unc, sys_err_keV)) 
+    np.savetxt("calib_results.csv", output_list, delimiter=",", comments="",
+            header="slope,slope_unc,intercept,intercept_unc, sys_err_keV")
+    
+    # converting uncertainties to energy
     cal_err_E = []
     for i in range(len(cal_ch)):
         slope_unc_rel = slope_unc/slope
