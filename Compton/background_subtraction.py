@@ -1,6 +1,7 @@
 """
 Subtract the background from cosmics, residual light, and detector noise using the long background run.
 Need to scale down the background to match the live time of the data runs
+Used for calibration
 
 Usage:
     python background_subtraction.py
@@ -8,7 +9,7 @@ Usage:
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
+from pathlib import Path
 
 # =============================== CONFIG ====================================
 
@@ -18,18 +19,18 @@ LOG_Y = False              # log scale for the spectra plots
 SOURCES = [
     {
         "name": "Cs-137",
-        "file_post": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/cs137_withgain_subtracted.txt",
-        "file_pre": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/cs137_withgain.mca",
+        "file_post": "./Grad26/analysis/cs137_withgain_subtracted.txt",
+        "file_pre": "./Grad26/calibration/cs137_withgain.mca",
     },
     {
         "name": "Ba-133",
-        "file_post": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/ba133_withgain_subtracted.txt", #middle peak is optional
-        "file_pre": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/ba133_withgain.mca", #middle peak is optional
+        "file_post": "./Grad26/analysis/ba133_withgain_subtracted.txt", 
+        "file_pre": "./Grad26/calibration/ba133_withgain.mca", 
     },
     {
         "name": "Na-22",
-        "file_post": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/na22_withgain_subtracted.txt",
-        "file_pre": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/na22_withgain.mca",
+        "file_post": "./Grad26/analysis/na22_withgain_subtracted.txt",
+        "file_pre": "./Grad26/calibration/na22_withgain.mca",
     },
 ]
 
@@ -43,7 +44,7 @@ elif source == "ba_133":
 if source == "na_22":
     index = 2
 
-bkg_path='/Users/akshayr/Phys_871/Compton/Grad26/calibration/bkg_withgain_850.mca'
+bkg_path='.//Grad26/calibration/bkg_withgain_850.mca'
 
 def load_spectrum(path, n_channels=N_CHANNELS):
     header_data = []
@@ -121,7 +122,6 @@ def main():
     plt.savefig("plots/background_subtraction.pdf", format="pdf", bbox_inches="tight")
 
     plt.show()
-
 
     #save output
     # out = f"{SOURCES[index]["file_post"]}"

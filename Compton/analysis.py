@@ -2,11 +2,13 @@
 Main file to perform the analysis
 
 - Perform the peak fitting to find the peak energy for each angle (done)
-- Calculate the energy over angle plots after background subtraction (done)
-- Calculate yield ratio of the no target runs
-- Plot 1/E' vs. 1-cos(theta), calculate find the line of best fit and get the slope (done)
-- Calculate the differential cross section and plot against scattering angle
-- Propagate all the uncertainties to the final results and error bars in final plots
+- Plot the Gaussian fitting to the data for each angle (done)
+- Calculate and plot the energy over angle after background subtraction (done)
+- Calculate yield ratio of the no target runs (skip)
+- Plot 1/E' vs. 1-cos(theta), calculate find the line of best fit and get the slope and intercept (done)
+- Calculate the yield under peak and uncertainty (done)
+- Calculate the differential cross section and plot against scattering angle (done)
+- Propagate all the uncertainties to the final results and error bars in final plots (done)
 
 Usage:
     python3 analysis.py
@@ -17,8 +19,6 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.ndimage import gaussian_filter1d
 from odrpack import odr_fit
-import centroid_uncertainty
-import calibration
 
 FWHM_PER_SIGMA = 2.3548
 LOG_Y = False
@@ -38,12 +38,11 @@ coeffs["sys_err"] = sys_err_keV[0]
 
 calib = np.poly1d(coeffs["values"])
 
+# used for reference, now using energy guesses from compton angle and half-width from scaling down the true peak based on sqrt(E)
 energy_guesses=[650, 590, 640, 640, 640, 640, 640, 640, 640, 640, 640, 540, 500, 425, 414, 360, 300, 283]
 hws=[150, 150, 100, 100, 100, 100, 100, 100, 100, 100, 100, 150, 150, 150, 150, 150, 150, 150]
 
 PEAKS = {} # start off with guess of 2700 channel for angle=10
-
-
 
 
 """
@@ -59,24 +58,18 @@ covariance matrix. Keep negative values in the subtracted spectrum (no np.clip).
 E0_KEV = 661.657
 MC2_KEV = 510.999
 
-# Set these from YOUR data
 FWHM_662 = 44.8       # keV, FWHM of the Cs-137 peak in your calibration spectrum
-# ENERGY_SCALE = 0.98    # measured peak energy / ideal Compton energy (your data: 0.97-1.0)
-
 
 def compton_energy(angle_deg, E0=E0_KEV):
     return E0 / (1.0 + (E0 / MC2_KEV) * (1.0 - np.cos(np.radians(angle_deg))))
-
 
 def expected_peak(angle_deg):
     """(expected energy, expected FWHM) in keV; NaI-type resolution scales as sqrt(E)."""
     E = compton_energy(angle_deg)
     return E, FWHM_662 * np.sqrt(E / E0_KEV)
 
-
 def gauss(x, amp, mu, sigma, offset=0.0):
     return amp * np.exp(-0.5 * ((x - mu) / sigma) ** 2) + offset
-
 
 def fit_peak_bounded(x, counts, guess, fwhm_exp, bin_width, offset=True,
                      sigma_y=None, mu_tol=20.0, width_range=(0.6, 1.6), hw_factor=2.0):
@@ -112,18 +105,11 @@ def fit_peak_bounded(x, counts, guess, fwhm_exp, bin_width, offset=True,
     )
     perr = np.sqrt(np.diag(pcov))
 
+    # calculate yield under Gaussian peak in energy axis
     scale = np.sqrt(2 * np.pi) / bin_width                 # (counts/bin x keV) -> counts
-    yield_ = popt[0] * popt[2] * scale
+    yield_ = popt[0] * popt[2] * scale                     # A * sigma * sqrt(2 pi) / bin_width
     J = np.array([popt[2], 0.0, popt[0]]) * scale          # d(yield)/d(amp, mu, sigma)
-    yield_err = np.sqrt(J @ pcov[:3, :3] @ J)
-
-    # return {
-    #     "yield": yield_, "yield_err": yield_err,
-    #     "mu": popt[1], "mu_err": perr[1],
-    #     "fwhm": FWHM_PER_SIGMA * popt[2], "fwhm_err": FWHM_PER_SIGMA * perr[2],
-    #     "popt": popt, "x": xs, "y": ys,
-    #     "model": lambda xx: gauss(np.asarray(xx, float), *popt),
-    # }
+    yield_err = np.sqrt(J @ pcov[:3, :3] @ J)              # err = sqrt(variance) = sqrt(J^T C J) 
 
     return {
         "amp": popt[0], "mu": popt[1], "mu_err": perr[1],
@@ -145,9 +131,6 @@ def load_spectrum(path):
     channel, counts = np.loadtxt(path, unpack=True)
     return channel, counts
 
-def gauss(x, amp, mu, sigma, offset=0.0):
-    return amp * np.exp(-0.5 * ((x - mu) / sigma) ** 2) + offset
-
 def angular_error():
     d = 48.5-28.5
     R = 2.54
@@ -158,17 +141,17 @@ def quad_sum(*terms):
     """sqrt(sum of squares) of independent uncertainties."""
     return np.sqrt(sum(np.square(np.asarray(t, dtype=float)) for t in terms))
 
-def channel_to_energy(ch, ch_err):
-    slope, intercept = coeffs["values"]
-    slope_unc, intercept_unc = coeffs["uncertainties"]
+# def channel_to_energy(ch, ch_err):
+#     slope, intercept = coeffs["values"]
+#     slope_unc, intercept_unc = coeffs["uncertainties"]
 
-    peak_E = calib(ch)
+#     peak_E = calib(ch)
 
-    slope_unc_rel = slope_unc/slope
-    channel_unc_rel = ch_err/ch
-    peak_err_E = np.sqrt((slope*ch)**2 * ((slope_unc_rel)**2 + (channel_unc_rel)**2) + intercept_unc**2)
+#     slope_unc_rel = slope_unc/slope
+#     channel_unc_rel = ch_err/ch
+#     peak_err_E = np.sqrt((slope*ch)**2 * ((slope_unc_rel)**2 + (channel_unc_rel)**2) + intercept_unc**2)
     
-    return peak_E, peak_err_E
+#     return peak_E, peak_err_E
 
 def thompson(angle):
     angle = np.radians(angle)
@@ -182,93 +165,98 @@ def klein_nishina(angle, gamma):
     val3 = 1 + (gamma**2 * (1-np.cos(angle))**2) / ((1+(np.cos(angle))**2) * (1+gamma*(1-np.cos(angle))))
     return val * val2 * val3
     
-def fit_peak(ch, counts, guess, half_width, offset=True, sigma_y=None):
-    """
-    ch, counts : full spectrum
-    guess      : rough peak channel (anywhere near the top is fine)
-    half_width : window is guess +- half_width channels; use >= ~1.3 x FWHM
-    offset     : also fit a constant background
-    sigma_y    : optional per-channel errors for the FULL spectrum (see module docstring)
+# def fit_peak(ch, counts, guess, half_width, offset=True, sigma_y=None):
+#     """
+#     ch, counts : full spectrum
+#     guess      : rough peak channel (anywhere near the top is fine)
+#     half_width : window is guess +- half_width channels; use >= ~1.3 x FWHM
+#     offset     : also fit a constant background
+#     sigma_y    : optional per-channel errors for the FULL spectrum (see module docstring)
  
-    Returns a dict with amp, mu, mu_err, fwhm, fwhm_err, popt, x, y, model.
-    """
-    sel = np.abs(ch - guess) <= half_width
-    x, y = ch[sel], counts[sel]
+#     Returns a dict with amp, mu, mu_err, fwhm, fwhm_err, popt, x, y, model.
+#     """
+#     sel = np.abs(ch - guess) <= half_width
+#     x, y = ch[sel], counts[sel]
  
-    # start values taken from the data, not from the guess
-    smooth = gaussian_filter1d(y, 5, mode="nearest")
-    amp0, mu0 = smooth.max(), x[smooth.argmax()]
-    sig0 = max(np.count_nonzero(smooth > amp0 / 2) / FWHM_PER_SIGMA, 3.0)
+#     # start values taken from the data, not from the guess
+#     smooth = gaussian_filter1d(y, 5, mode="nearest")
+#     amp0, mu0 = smooth.max(), x[smooth.argmax()]
+#     sig0 = max(np.count_nonzero(smooth > amp0 / 2) / FWHM_PER_SIGMA, 3.0)
  
-    p0 = [amp0, mu0, sig0] + ([0.0] if offset else [])
-    lower = [0.0, x[0], 1.0] + ([-np.inf] if offset else [])
-    upper = [10 * y.max(), x[-1], x[-1] - x[0]] + ([np.inf] if offset else [])
+#     p0 = [amp0, mu0, sig0] + ([0.0] if offset else [])
+#     lower = [0.0, x[0], 1.0] + ([-np.inf] if offset else [])
+#     upper = [10 * y.max(), x[-1], x[-1] - x[0]] + ([np.inf] if offset else [])
  
-    popt, pcov = curve_fit(
-        gauss, x, y, p0=p0, bounds=(lower, upper),
-        sigma=None if sigma_y is None else np.asarray(sigma_y)[sel],
-        absolute_sigma=sigma_y is not None, max_nfev=20000,
-    )
-    perr = np.sqrt(np.diag(pcov))
+#     popt, pcov = curve_fit(
+#         gauss, x, y, p0=p0, bounds=(lower, upper),
+#         sigma=None if sigma_y is None else np.asarray(sigma_y)[sel],
+#         absolute_sigma=sigma_y is not None, max_nfev=20000,
+#     )
+#     perr = np.sqrt(np.diag(pcov))
 
-    # yield of peak
-    yield_exact = popt[0] * popt[2] * np.sqrt(2*np.pi)
-    yield_exact_err = (perr[0]/popt[0] + perr[2]/popt[2])*yield_exact
-    print(yield_exact, yield_exact_err)
+#     # yield of peak
+#     yield_exact = popt[0] * popt[2] * np.sqrt(2*np.pi)
+#     yield_exact_err = (perr[0]/popt[0] + perr[2]/popt[2])*yield_exact
+#     print(yield_exact, yield_exact_err)
 
-    return {
-        "amp": popt[0], "mu": popt[1], "mu_err": perr[1],
-        "fwhm": FWHM_PER_SIGMA * popt[2], "fwhm_err": FWHM_PER_SIGMA * perr[2],
-        "popt": popt, "x": x, "y": y, "model": lambda xx: gauss(xx, *popt),
-        "yield": (yield_exact, yield_exact_err)
-    }
+#     return {
+#         "amp": popt[0], "mu": popt[1], "mu_err": perr[1],
+#         "fwhm": FWHM_PER_SIGMA * popt[2], "fwhm_err": FWHM_PER_SIGMA * perr[2],
+#         "popt": popt, "x": x, "y": y, "model": lambda xx: gauss(xx, *popt),
+#         "yield": (yield_exact, yield_exact_err),
+#     }
 
 def main():
     # angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
     angles = ["10", "20", "30", "40", "50", "60", "70", "80", "90"]
-    peak_energies, energy_errs, yield_values = [], [], []
+    peak_energies, energy_errs, energy_errs_indep, yield_values = [], [], [], []
     plot_configs = {}
 
     for (angle, (centroid_guess, hw)) in PEAKS.items():
         subtracted_file = "Grad26/cs137_subtracted/cs137_subtracted_angle_" + str(angle) + ".txt"
         print(f"Loading " + subtracted_file)
         ch, counts = load_spectrum(subtracted_file)
+
+        # convert to energies
         energies = []
         for val in ch:
             energies.append(calib(val))
 
         energies = np.array(energies, dtype=float)
         err = np.nan
-        
+
+        # perform the gaussian fitting to find the peak energy
         E_guess, fwhm_exp = expected_peak(angle)
-        r = fit_peak_bounded(energies, counts, E_guess, fwhm_exp, bin_width=0.2407)
+        print(E_guess, fwhm_exp)
+        r = fit_peak_bounded(energies, counts, E_guess, fwhm_exp, bin_width=coeffs["values"][0])
         
         # r = fit_peak(ch, counts, centroid_guess, hw)
             
         mean, err, fwhm, fwhm_err, popt, yield_exact = r["mu"], r["mu_err"], r["fwhm"], r["fwhm_err"], r["popt"], r["yield"]
         print("angle: ", str(angle))
-        print("centroid: ", str(mean))
+        print("centroid (keV): ", str(mean))
         print("fwhm: ", fwhm)
 
+        # uncertainty calculations
         # per-angle window/model systematic: refit with different settings, take the spread
         mus = [fit_peak_bounded(energies, counts, E_guess, fwhm_exp, 0.2407,
                                 offset=o, hw_factor=h)["mu"]
             for h in (1.5, 2.0, 2.5) for o in (False, True)]
         sigma_win = np.std(mus, ddof=1)
 
-        sigma_stat = 1.2 * err            # my simulation: the fit's formal error is ~20% low
-        sigma_cal  = coeffs["sys_err"]    # calibration residual RMS (already in your code)
+        # sigma_stat = 1.2 * err            # my simulation: the fit's formal error is ~20% low
+        sigma_cal  = coeffs["sys_err"]    # calibration residual RMS
         sigma_slope = mean * (slope_unc / slope)           # calibration slope uncertainty
-        combined_error = quad_sum(sigma_stat, sigma_win, sigma_cal, sigma_slope)
+        combined_error = quad_sum(err, sigma_win, sigma_cal, sigma_slope)
         
         peak_energies.append(mean)
         energy_errs.append(combined_error)
+        energy_errs_indep.append(err) # used for the ODR fitting to find slope and y-intercept
         yield_values.append(yield_exact)
         
-
-        # plotting
+        # plotting the individual fits
         hw = 2.0 * fwhm_exp                          # the half-width the fit used (hw_factor = 2.0)
-        view = np.abs(energies - E_guess) <= 1.3 * hw
+        view = np.abs(energies - E_guess) <= hw
         x, y = energies[view], counts[view]
 
         fig, ax1 = plt.subplots()
@@ -294,14 +282,15 @@ def main():
 
     peak_energies = np.array(peak_energies, dtype=float)
     energy_errs = np.array(energy_errs[0], dtype=float)
+    energy_errs_indep = np.array(energy_errs_indep, dtype=float)
     print(energy_errs)
 
     # print(peak_channels)
     # print(channel_errs)
-
     
     fig, axs = plt.subplots(3, 3)
 
+    # plot the fits for each angle in one 3x3 plot
     i = 0
     for (angle, (x, y, x_fit, y_fit)) in plot_configs.items():
         angle = str(angle)
@@ -325,7 +314,7 @@ def main():
         ax.tick_params(axis='both', which='both', labelsize=7) 
         ax.grid(True, alpha=0.3)
         if LOG_Y:
-            ax.set_yscale("log", nonpositive="clip")  # Applied to ax, not fig
+            ax.set_yscale("log", nonpositive="clip")
 
     fig.tight_layout()
     fig.savefig("plots/cs137_data_runs/cs137_subtracted_counts_w_fitting.pdf", format="pdf", bbox_inches="tight")
@@ -347,13 +336,12 @@ def main():
     fig.clf()
 
     # plotting inverse energy fit
-
     cos_x = np.array(1-np.cos(np.radians(x)), dtype=float)
     y=1/(peak_energies/1000) # convert to MeV so the y scale has less decimal places
 
     # first calculate the uncertainties for x and y error bars
     cos_x_errs = np.abs(np.sin(np.radians(x)))*np.radians(angle_err)
-    y_errs = (energy_errs/peak_energies)*y
+    y_errs_indep = (energy_errs_indep/peak_energies)*y
 
     # need to do a linear ODR fit since we have x and y errors
     sol = odr_fit(
@@ -362,7 +350,7 @@ def main():
         y,
         beta0=[1.50, 1.96],
         weight_x=cos_x_errs**-2,
-        weight_y=y_errs**-2
+        weight_y=y_errs_indep**-2
     ) 
 
     m, b = sol.beta[1], sol.beta[0]
@@ -378,12 +366,13 @@ def main():
     g_energy_unc = ((b_err/b)*b)/2
     print(f"energy of incoming photon = {g_energy:.3f} +/- {g_energy_unc:.3f} MeV")
 
+    y_errs = (energy_errs/peak_energies)*y
     fig, ax1 = plt.subplots()
     h_data = ax1.scatter(cos_x, y, marker='o', label='data', zorder=2)
     h_err = ax1.errorbar(cos_x, y, yerr=y_errs, xerr=cos_x_errs, label='error', fmt='none', color='C7', zorder=1)
     h_fit, = ax1.plot(cos_x, m * cos_x + b, color='red', label=f'Best fit: y = {m:.2f}x + {b:.2f}', zorder=3)
-    ax1.set_xlabel('1-cos(theta)')
-    ax1.set_ylabel("1/E'")
+    ax1.set_xlabel(r'$1-\cos(\theta)$')
+    ax1.set_ylabel(r"1/E' $(\text{MeV}^{-1})$")
     ax1.grid(alpha=0.3)
     ax1.set_title('Cs-137 Compton energy shift')
     ax1.legend(loc="upper left", handles=[h_data, h_err, h_fit])
@@ -408,6 +397,7 @@ def main():
     N_err = 0.5/h * N
 
     # read off the peak/total ratio and absorption efficiency for the detector at each angle and calculate the scale factor to get the corrected yield
+    # scale factors read off plots
     scale_factors = np.array([2.886, 2.564, 2.404, 2.077, 1.838, 1.696, 1.489, 1.400, 1.302], dtype=float)
     scale_factors_err = np.array([0.1016, 0.0842, 0.0763, 0.0608, 0.0503, 0.0446, 0.0366, 0.0333, 0.0298], dtype=float) 
     corr_yield, corr_yield_err = [], []
@@ -422,7 +412,7 @@ def main():
     print(yield_values[2])
     print(corr_yield, corr_yield_err)
 
-    activity = 3.70*10**7
+    activity = 3.70*10**7 # given
     I0 = activity / (4*np.pi) / (48.5)**2
     print(I0)
     I0_err = 2*0.5/48.5 * I0
@@ -444,6 +434,7 @@ def main():
         th_cross_sections.append(thompson(x[i]) * 10**27)
         kn_cross_sections.append(klein_nishina(x[i], gamma) * 10**27)
 
+    # plot the cross section over angle and include Thompson and Klein-Nishina predictions
     plt.plot(x, cross_sections, label='data', zorder=2)
     plt.plot(x, th_cross_sections, label='Thompson', color='C1')
     plt.plot(x, kn_cross_sections, label='Klein-Nishina', color='C2')
@@ -454,14 +445,13 @@ def main():
     plt.legend()
     fig.savefig("cross_section_over_angle.pdf", format="pdf", bbox_inches="tight")
 
-    print("angle  yield    err    SF   corr   xsec     KN   ratio")
+    # print table of yields and comparisons with theory
+    print("angle  yield    err    SF  corr yield  xsec   KN    ratio")
     for a, (y, ye), sf, k in zip(x, yield_values, scale_factors, kn_cross_sections):   # kn_vals in 1e-27 cm2/sr
         xs = y * sf / (dOmega * N * I0 * 300) * 1e27
         print(f"{a:5d} {y:7.0f} {ye:6.0f} {sf:5.2f} {y*sf:7.0f} {xs:7.1f} {k:6.1f} {xs/k:6.2f}")
 
 
-
-    
 if __name__ == "__main__":
     main()
 

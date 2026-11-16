@@ -1,9 +1,7 @@
 """
 Channel -> energy calibration from three source spectra.
 
-Each spectrum file is a text file with 4096 channels, either:
-  - one column  : counts per channel (channel = line number, starting at 0), or
-  - two columns : channel, counts
+Each spectrum file is a text file with 4096 channels with two columns : channel, counts
 
 Edit the CONFIG section below with your file names and the peaks you want to
 use (channel centroid + known energy). All peaks from all three sources are
@@ -19,7 +17,6 @@ Usage:
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
-# import centroid_uncertainty
 
 # =============================== CONFIG ====================================
 
@@ -31,29 +28,29 @@ REFINE_HALF_WIDTH = 50    # channels either side of the centroid for the refit
 LOG_Y = False              # log scale for the spectra plots
 SAVE_CALIBRATED = True    # write <name>_calibrated.txt (energy, counts)
 
-output_path='/Users/akshayr/Phys_871/Compton/Grad26/calibration/'
+output_path='./Grad26/calibration/'
 
 # Each source: label, file, and a list of (centroid_channel, known_energy_keV).
 # The values below are EXAMPLES -- replace with your own files and centroids.
 SOURCES = [
     {
         "name": "Cs-137",
-        "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/cs137_withgain_subtracted.txt",
-        # "file": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/cs137_withgain.mca",
+        "file": "./Grad26/analysis/cs137_withgain_subtracted.txt",
+        # "file": "./Compton/Grad26/calibration/cs137_withgain.mca",
         "peaks": [(2711.87, 661.657, 200)],
     },
     {
         "name": "Ba-133",
-        "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/ba133_withgain_subtracted.txt", #middle peak is optional
-        # "file": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/ba133_withgain.mca", #middle peak is optional
+        "file": "./Grad26/analysis/ba133_withgain_subtracted.txt", #middle peak is optional
+        # "file": "./Grad26/calibration/ba133_withgain.mca", #middle peak is optional
         # "peaks": [(150.67, 30.973, 20), (378, 81, 50), (1500, 356.01, 150)], 
         # "peaks": [(378, 81, 50), (1250, 302.9, 100), (1500, 356.01, 150)], # ai peaks
         "peaks": [(150.67, 30.973, 20), (1500, 356.01, 150)], 
     },
     {
         "name": "Na-22",
-        "file": "/Users/akshayr/Phys_871/Compton/Grad26/analysis/na22_withgain_subtracted.txt",
-        # "file": "/Users/akshayr/Phys_871/Compton/Grad26/calibration/na22_withgain.mca",
+        "file": ".n/Grad26/analysis/na22_withgain_subtracted.txt",
+        # "file": "./Grad26/calibration/na22_withgain.mca",
         "peaks": [(2119, 511.0, 150)],
     },
 ]
@@ -94,15 +91,16 @@ def refine_centroid(channels, counts, guess, half_width):
         if not np.isfinite(mu_err) or abs(popt[1] - guess) > half_width:
             raise RuntimeError("unreliable fit")
         
-        resid = (y - gauss_lin(x, *popt)) / sigma_y
+        resid = (y - gauss_lin(x, *popt)) / sigma_y 
         red_chi2 = np.sum(resid**2) / (len(x) - 5)
         mu_err_scaled = mu_err * np.sqrt(max(red_chi2, 1.0))
         fwhm = 2*np.sqrt(np.log(2)) * abs(popt[2])
         fwhm_err = 2*np.sqrt(np.log(2)) * perr[2]
+
         print("fwhm, fwhm_err: ", fwhm, fwhm_err)
         print("red_chi2, mu_err, mu_err_scaled", red_chi2, mu_err, mu_err_scaled)
 
-        return popt[1], mu_err_scaled, fwhm_err, popt
+        return popt[1], mu_err_scaled, popt
     except (RuntimeError, ValueError):
         print(f"  Warning: Gaussian refit failed near channel {guess}; using given centroid.")
         return guess, np.nan
@@ -120,13 +118,11 @@ def main():
         for centroid, energy, hw in src["peaks"]:
             err = np.nan
             if REFINE_CENTROIDS:
-                centroid, err, fwhm_err, popt_fit = refine_centroid(ch, counts, centroid, hw)
-
-            combined_error = quad_sum(err, fwhm_err)
+                centroid, err, popt_fit = refine_centroid(ch, counts, centroid, hw)
 
             cal_ch.append(centroid)
             cal_E.append(energy)
-            cal_err.append(combined_error)
+            cal_err.append(err)
             cal_label.append(src["name"])
             fit_params.append(popt_fit)
 
@@ -179,8 +175,12 @@ def main():
         print(f"  {lab:<8}{c:>10.2f}{e:>10.3f}{e - r:>10.3f}{r:>9.3f}")
 
     dof = n_pts - (FIT_ORDER + 1)
-    sys_err_keV = np.sqrt(np.sum(residuals**2) / dof)
-    print("sys err:", sys_err_keV)
+    rms = np.sqrt(np.sum(residuals**2) / dof)
+
+    # remove the part that is just statistical centroid scatter, so it isn't counted twice
+    sigma_stat_E = coeffs[0] * cal_err
+    sys_err_keV = np.sqrt(max(0.0, rms**2 - np.mean(sigma_stat_E**2)))
+    print("sys err:", sys_err_keV) # needs to be added in analysis.py
 
     # export calibration coeffs and their uncertainties, and sys err
     slope = coeffs[0]

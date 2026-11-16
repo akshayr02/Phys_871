@@ -1,6 +1,6 @@
 """
 Subtract the background from cosmics, residual light, and detector noise using no target runs for each angle measurement
-Also make plots of the data before and after subtraction for each angle
+Also makes plots of the data before and after subtraction for each angle
 Usage:
     python bkg_subtraction_angle.py
 """
@@ -15,10 +15,10 @@ import os
 N_CHANNELS = 4096
 LOG_Y = False              # log scale for the spectra plots
 
-angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
-# angles = ["10", "20", "30", "40", "50", "60", "70", "80", "90"]
+# angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
+angles = ["10", "20", "30", "40", "50", "60", "70", "80", "90"]
 
-bkg_path='/Users/akshayr/Phys_871/Compton/Grad26/calibration/bkg_withgain_850.mca'
+bkg_path='./Grad26/calibration/bkg_withgain_850.mca'
 
 def load_spectrum(path, n_channels=N_CHANNELS):
     header_data = []
@@ -57,8 +57,6 @@ def main():
     spectra_pre = {}
     spectra_post = {}
     for i in range(len(angles)):
-        # spectra_pre = []
-        # spectra_post = []
         target_file = "Grad26/cs137/cs137_source_angle_" + angles[i] + "_target.mca"
         no_target_file = "Grad26/cs137/cs137_source_angle_" + angles[i] + "_no_target.mca"
         print(f"Loading " + target_file)
@@ -80,9 +78,6 @@ def main():
         for channel in ch:
             new_val = counts[channel-1]-scale_factor*bkg_counts[channel-1]
             subtracted.append(new_val)
-        
-        # spectra_pre = [ch, counts]
-        # spectra_post = [ch, subtracted]
 
         spectra_pre[angles[i]] = (ch, counts)
         spectra_post[angles[i]] = (ch, subtracted)
