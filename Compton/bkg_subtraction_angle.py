@@ -79,8 +79,6 @@ def main():
         subtracted = []
         for channel in ch:
             new_val = counts[channel-1]-scale_factor*bkg_counts[channel-1]
-            if new_val < 0:
-                new_val = 0
             subtracted.append(new_val)
         
         # spectra_pre = [ch, counts]
@@ -96,10 +94,10 @@ def main():
         
         (x, y) = spectra_post[angles[i]]
         (x2, y2) = spectra_pre[angles[i]]
-        # plt.plot(spectra_pre[0], spectra_pre[1], color="C7", alpha=0.7, linewidth=2, label='raw')
-        # plt.step(bkg_ch, bkg_counts, color='C2', alpha=0.7, linewidth=2, label='background')
-        plt.plot(x, y, color='C0', alpha=0.7, linewidth=2, label='background subtracted')
-        plt.axvline(2283, color="gray")
+        plt.plot(x2, y2, color="C7", alpha=0.7, linewidth=2, label='target in')
+        plt.step(bkg_ch, bkg_counts, color='C2', alpha=0.7, linewidth=2, label='target out')
+        plt.plot(x, y, color='C0', alpha=0.7, linewidth=2, label='subtracted')
+        # plt.axvline(2283, color="gray")
         # plt.axvline(2903, color="red")
 
         plt.title('Cs-137 angle measurements (' + angles[i] + ' deg)')
