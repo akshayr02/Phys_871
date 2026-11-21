@@ -15,8 +15,8 @@ import os
 N_CHANNELS = 4096
 LOG_Y = False              # log scale for the spectra plots
 
-# angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
-angles = ["10", "20", "30", "40", "50", "60", "70", "80", "90"]
+angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
+# angles = ["10", "20", "30", "40", "50", "60", "70", "80", "90"]
 
 bkg_path='./Grad26/calibration/bkg_withgain_850.mca'
 
@@ -63,34 +63,50 @@ def main():
         # print(f"Loading " + no_target_file)
         ch, counts, live_time = load_spectrum(target_file)
 
-        if os.path.isfile(no_target_file): # use the long background run if we don't have no target runs
-            bkg_ch, bkg_counts, bkg_live_time = load_spectrum(no_target_file)
-        else:
-            bkg_ch, bkg_counts, bkg_live_time = load_spectrum(bkg_path)
+        # if os.path.isfile(no_target_file): # use the long background run if we don't have no target runs
+        #     bkg_ch, bkg_counts, bkg_live_time = load_spectrum(no_target_file)
+        # else:
+        #     bkg_ch, bkg_counts, bkg_live_time = load_spectrum(bkg_path)
 
-        # bkg_ch, bkg_counts, bkg_live_time = load_spectrum(bkg_path)
+        bkg_ch, bkg_counts, bkg_live_time = load_spectrum(bkg_path)
 
+        nbins = int(N_CHANNELS/50)
+                
+        counts, ch_edges = np.histogram(ch, bins=nbins, weights=counts)
+        bkg_counts, bkg_ch_edges = np.histogram(bkg_ch, bins=nbins, weights=bkg_counts)
+                
+        # 2. Calculate bin centers and bin widths
+        ch_binned, bkg_ch_binned = [], []
+                
+        for j in range(len(ch_edges) - 1):
+            midpoint = (ch_edges[j] + ch_edges[j + 1]) / 2
+            midpoint_2 = (bkg_ch_edges[j] + bkg_ch_edges[j + 1]) / 2
+            ch_binned.append(midpoint)
+            bkg_ch_binned.append(midpoint_2)
+        widths = np.diff(ch_edges)
+        print("bin width: ", widths[0])
+        
         scale_factor = live_time/bkg_live_time
         print(scale_factor)
-        print(len(ch))
+        print(len(ch_binned))
 
         subtracted = []
-        for channel in ch:
-            new_val = counts[channel-1]-scale_factor*bkg_counts[channel-1]
+        for j in range(len(ch_binned)):
+            new_val = counts[j]-scale_factor*bkg_counts[j]
             subtracted.append(new_val)
 
-        spectra_pre[angles[i]] = (ch, counts)
-        spectra_post[angles[i]] = (ch, subtracted)
+        spectra_pre[angles[i]] = (ch_binned, counts)
+        spectra_post[angles[i]] = (ch_binned, subtracted)
 
         # plotting
-        if i == 2: # remove the spike for 20 deg
-            spectra_pre[angles[i]] = (ch[150:], counts[150:])
-            spectra_post[angles[i]] = (ch[150:], subtracted[150:])
+        # if i == 2: # remove the spike for 20 deg
+        #     spectra_pre[angles[i]] = (ch[150:], counts[150:])
+        #     spectra_post[angles[i]] = (ch[150:], subtracted[150:])
         
         (x, y) = spectra_post[angles[i]]
         (x2, y2) = spectra_pre[angles[i]]
-        plt.plot(x2, y2, color="C7", alpha=0.7, linewidth=2, label='target in')
-        plt.step(bkg_ch, bkg_counts, color='C2', alpha=0.7, linewidth=2, label='target out')
+        plt.plot(x2, y2, color="C7", alpha=0.7, linewidth=2, label='raw')
+        # plt.step(bkg_ch_binned, bkg_counts*scale_factor, color='C2', alpha=0.7, linewidth=2, label='background')
         plt.plot(x, y, color='C0', alpha=0.7, linewidth=2, label='subtracted')
         # plt.axvline(2283, color="gray")
         # plt.axvline(2903, color="red")
@@ -109,7 +125,7 @@ def main():
 
         # save output
         out = "Grad26/cs137_subtracted/cs137_subtracted_angle_" + angles[i] + ".txt"
-        np.savetxt(out, np.column_stack([ch, subtracted]), header="subtracted counts", fmt=["%.5f", "%.0f"])
+        np.savetxt(out, np.column_stack([ch_binned, subtracted]), header="subtracted counts", fmt=["%.5f", "%.0f"])
         print(f"Saved {out}")
 
     # make a combined subplot of all the angles
@@ -119,11 +135,6 @@ def main():
     for angle in spectra_post:
         (x, y) = spectra_post[angle]
         (x2, y2) = spectra_pre[angle]
-        if angle == "20": # remove the spike for 20 deg
-            x = x[150:]
-            y = y[150:]
-            x2 = x2[150:]
-            y2 = y2[150:]
         if angle=="10" or angle=="20" or angle=="30":
             axs[0, i%3].plot(x, y, color='C0', alpha=0.7, linewidth=2, label='background subtracted')
             axs[0, i%3].set_title('Angle = ' + angle + ' deg')

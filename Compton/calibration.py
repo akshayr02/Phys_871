@@ -21,6 +21,7 @@ from scipy.optimize import curve_fit
 # =============================== CONFIG ====================================
 
 N_CHANNELS = 4096
+# N_CHANNELS = 409
 FIT_ORDER = 1             # 1 = linear, 2 = quadratic
 REFINE_CENTROIDS = True  # True: Gaussian + linear-background fit around each
                           # user centroid (also gives centroid uncertainties)
@@ -37,7 +38,7 @@ SOURCES = [
         "name": "Cs-137",
         "file": "./Grad26/analysis/cs137_withgain_subtracted.txt",
         # "file": "./Compton/Grad26/calibration/cs137_withgain.mca",
-        "peaks": [(2711.87, 661.657, 200)],
+        "peaks": [(2711.87, 661.657, 250)],
     },
     {
         "name": "Ba-133",
@@ -45,13 +46,13 @@ SOURCES = [
         # "file": "./Grad26/calibration/ba133_withgain.mca", #middle peak is optional
         # "peaks": [(150.67, 30.973, 20), (378, 81, 50), (1500, 356.01, 150)], 
         # "peaks": [(378, 81, 50), (1250, 302.9, 100), (1500, 356.01, 150)], # ai peaks
-        "peaks": [(150.67, 30.973, 20), (1500, 356.01, 150)], 
+        "peaks": [(150.67, 30.973, 35), (1500, 356.01, 140)], 
     },
     {
         "name": "Na-22",
-        "file": ".n/Grad26/analysis/na22_withgain_subtracted.txt",
+        "file": "./Grad26/analysis/na22_withgain_subtracted.txt",
         # "file": "./Grad26/calibration/na22_withgain.mca",
-        "peaks": [(2119, 511.0, 150)],
+        "peaks": [(2119, 511.0, 180)],
     },
 ]
 
@@ -60,8 +61,8 @@ SOURCES = [
 fitting_x = []
 
 def load_spectrum(path, n_channels=N_CHANNELS):
-    channel, counts = np.loadtxt(path, unpack=True)
-    return channel, counts
+    index, channel, counts = np.loadtxt(path, unpack=True)
+    return index, channel, counts
 
 def gauss_lin(x, amp, mu, sigma, m, c):
     return amp * np.exp(-0.5 * ((x - mu) / sigma) ** 2) + m * x + c
@@ -73,13 +74,11 @@ def quad_sum(*terms):
 def refine_centroid(channels, counts, guess, half_width):
     """Fit a Gaussian + linear background near `guess`.
     Returns (centroid, uncertainty); falls back to (guess, nan) on failure."""
-    lo = max(int(guess - half_width), 0)
-    hi = min(int(guess + half_width) + 1, len(counts))
-    x = channels[lo:hi]
+    sel = (channels >= guess - half_width) & (channels <= guess + half_width)
+    x, y = channels[sel], counts[sel]
     fitting_x.append(x)
-    y = counts[lo:hi]
-    if len(x) < 6:
-        return guess, np.nan
+    if len(x) < 4:
+        return guess, np.nan, None
 
     p0 = [max(y) - min(y), guess, half_width / 3, 0.0, min(y)]
     sigma_y = np.sqrt(np.maximum(y, 1.0))  # Poisson errors
@@ -103,7 +102,7 @@ def refine_centroid(channels, counts, guess, half_width):
         return popt[1], mu_err_scaled, popt
     except (RuntimeError, ValueError):
         print(f"  Warning: Gaussian refit failed near channel {guess}; using given centroid.")
-        return guess, np.nan
+        return guess, np.nan, None
 
 def main():
     spectra = {}
@@ -112,8 +111,9 @@ def main():
     # ---- load spectra and gather calibration points ----
     for src in SOURCES:
         print(f"Loading {src['name']} from {src['file']}")
-        ch, counts = load_spectrum(src["file"])
+        index, ch, counts = load_spectrum(src["file"])
         spectra[src["name"]] = (ch, counts)
+        print(len(ch), len(counts))
 
         for centroid, energy, hw in src["peaks"]:
             err = np.nan
@@ -152,30 +152,11 @@ def main():
     calib = np.poly1d(coeffs)
     print("COEFFS: ", coeffs)
     print("COV:", cov)
-    
+
     residuals = cal_E - calib(cal_ch)
-    red_chi2_fit = np.sum((residuals/cal_err)**2) / (n_pts - len(coeffs))
-    print("red_chi2 of calibration fit: ", red_chi2_fit)
-
-    # ---- report ----
-    print("\n=========== Calibration result ===========")
-    names = [f"a{i}" for i in range(FIT_ORDER, -1, -1)]
-    for i, (n, c) in enumerate(zip(names, coeffs)):
-        print(i)
-        unc = f" +/- {np.sqrt(cov[i, i]):.3e}" if cov is not None else ""
-        power = FIT_ORDER - i
-        print(f"  {n} (ch^{power}) = {c:.6e}{unc}")
-
-    terms = " + ".join(f"{c:.6g}*ch^{FIT_ORDER - i}" for i, c in enumerate(coeffs))
-    print(f"  E(keV) = {terms}")
-    print(f"  RMS residual = {np.sqrt(np.mean(residuals**2)):.3f} keV\n")
-
-    print(f"  {'Source':<8}{'Centroid':>10}{'E_known':>10}{'E_fit':>10}{'Resid':>9}")
-    for lab, c, e, r in zip(cal_label, cal_ch, cal_E, residuals):
-        print(f"  {lab:<8}{c:>10.2f}{e:>10.3f}{e - r:>10.3f}{r:>9.3f}")
-
     dof = n_pts - (FIT_ORDER + 1)
     rms = np.sqrt(np.sum(residuals**2) / dof)
+    print(residuals)
 
     # remove the part that is just statistical centroid scatter, so it isn't counted twice
     sigma_stat_E = coeffs[0] * cal_err
@@ -191,22 +172,37 @@ def main():
     output_list.append((slope, slope_unc, intercept, intercept_unc, sys_err_keV)) 
     np.savetxt("calib_results.csv", output_list, delimiter=",", comments="",
             header="slope,slope_unc,intercept,intercept_unc, sys_err_keV")
-    
-    # converting uncertainties to energy
-    cal_err_E = []
-    for i in range(len(cal_ch)):
-        slope_unc_rel = slope_unc/slope
-        channel_unc_rel = cal_err[i]/cal_ch[i]
-        val = np.sqrt((slope*cal_ch[i])**2 * ((slope_unc_rel)**2 + (channel_unc_rel)**2) + intercept_unc**2)
-        cal_err_E.append(val)
-
+        
+    # converting uncertainties to energy using partial derivatives
+    cal_err_E = np.abs(dEdch * cal_err)
     cal_err_E = np.array(cal_err_E, dtype=float)
+    print(cal_err_E)
+    
+    red_chi2_fit = np.sum((residuals/cal_err_E)**2) / (n_pts - len(coeffs))
+    print("red_chi2 of calibration fit: ", red_chi2_fit)
+
+    # ---- report ----
+    print("\n=========== Calibration result ===========")
+    names = [f"a{i}" for i in range(FIT_ORDER, -1, -1)]
+    for i, (n, c) in enumerate(zip(names, coeffs)):
+        unc = f" +/- {np.sqrt(cov[i, i]):.3e}" if cov is not None else ""
+        power = FIT_ORDER - i
+        print(f"  {n} (ch^{power}) = {c:.6e}{unc}")
+
+    terms = " + ".join(f"{c:.6g}*ch^{FIT_ORDER - i}" for i, c in enumerate(coeffs))
+    print(f"  E(keV) = {terms}")
+    print(f"  RMS residual = {np.sqrt(np.mean(residuals**2)):.3f} keV\n")
+
+    print(f"  {'Source':<8}{'Centroid':>10}{'E_known':>10}{'E_fit':>10}{'Resid':>9}")
+    for lab, c, e, r in zip(cal_label, cal_ch, cal_E, residuals):
+        print(f"  {lab:<8}{c:>10.2f}{e:>10.3f}{e - r:>10.3f}{r:>9.3f}")
+
     
     # ---- plot 1: calibration curve + residuals ----
     fig1, (ax, axr) = plt.subplots(
         2, 1, figsize=(7, 6), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
     )
-    xx = np.linspace(0, N_CHANNELS - 1, 500)
+    xx = np.linspace(0, N_CHANNELS, 500)
     ax.plot(xx, calib(xx), "k-", lw=1, label=f"order-{FIT_ORDER} fit")
     colors = {s["name"]: f"C{i}" for i, s in enumerate(SOURCES)}
     for name in colors:
