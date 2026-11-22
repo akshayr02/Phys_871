@@ -13,7 +13,7 @@ Main file to perform the analysis
 Usage:
     python3 analysis.py
 """
-
+from fit_peak_coarse import fit_peak_coarse
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
@@ -22,8 +22,8 @@ from odrpack import odr_fit
 
 FWHM_PER_SIGMA = 2.3548
 LOG_Y = False
-# angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
-angles = ["10", "20", "30", "40", "50", "60", "70", "80", "90"]
+angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
+# angles = ["10", "20", "30", "40", "50", "60", "70", "80", "90"]
 hw = 100
 global r0 
 r0 = 2.82*10**(-13)
@@ -72,52 +72,98 @@ def expected_peak(angle_deg):
 def gauss(x, amp, mu, sigma, offset=0.0):
     return amp * np.exp(-0.5 * ((x - mu) / sigma) ** 2) + offset
 
-def fit_peak_bounded(x, counts, guess, fwhm_exp, bin_width, offset=False,
-                     sigma_y=None, mu_tol=40.0, width_range=(0.6, 1.6), hw_factor=2.0):
-    """
-    x          : energy axis of the full spectrum (keV)
-    guess      : expected peak energy (keV), e.g. from expected_peak(angle)
-    fwhm_exp   : expected FWHM at that energy (keV)
-    bin_width  : keV per channel; converts the area into counts
-    mu_tol     : the centroid may move +- mu_tol keV from the guess
-    width_range: sigma may range over this multiple of the expected sigma
-    hw_factor  : fit window = guess +- hw_factor * fwhm_exp
-
-    Returns a dict with yield (counts), yield_err, mu, mu_err, fwhm, fwhm_err, popt, x, y, model.
-    A yield smaller than ~3 x yield_err means the peak is not detected.
-    """
+def fit_peak_bounded(x, counts, guess, fwhm_exp, bin_width, offset=True, sigma_y=None,
+                     mu_tol=20.0, width_range=(0.6, 1.6), hw_factor=4.0,
+                     double=False, direct=None, fit_direct=False):
     x = np.asarray(x, float)
     counts = np.asarray(counts, float)
-    sel = np.abs(x - guess) <= hw_factor * fwhm_exp
-    # direct = (y[sel] - offset).sum() 
-    # print(sel, direct)
-    xs, ys = x[sel], counts[sel]
     sig_exp = fwhm_exp / FWHM_PER_SIGMA
+    scale = np.sqrt(2 * np.pi) / bin_width               # (counts/bin x keV) -> counts
 
-    core = ys[np.abs(xs - guess) < sig_exp]
-    p0 = [max(core.mean(), 1e-3), guess, sig_exp] + ([0.0] if offset else [])
-    lower = [0.0, guess - mu_tol, width_range[0] * sig_exp] + ([-np.inf] if offset else [])
-    upper = [np.inf, guess + mu_tol, width_range[1] * sig_exp] + ([np.inf] if offset else [])
-    print(lower, upper)
+    if double:
+        d = direct or {"mu": E0_KEV, "sigma": FWHM_662 / FWHM_PER_SIGMA}
+        mu2, s2 = float(d["mu"]), float(d["sigma"])
+        fwhm2 = FWHM_PER_SIGMA * s2
+        lo = min(guess - hw_factor * fwhm_exp, mu2 - hw_factor * fwhm2)
+        hi = max(guess + hw_factor * fwhm_exp, mu2 + hw_factor * fwhm2)
+    else:
+        lo, hi = guess - hw_factor * fwhm_exp, guess + hw_factor * fwhm_exp
 
-    popt, pcov = curve_fit(
-        gauss, xs, ys, p0=p0, bounds=(lower, upper),
-        sigma=None if sigma_y is None else np.asarray(sigma_y, float)[sel],
-        absolute_sigma=sigma_y is not None, max_nfev=20000,
-    )
+    sel = (x >= lo) & (x <= hi)
+    xs, ys = x[sel], counts[sel]
+    # if len(xs) < 10:
+    #     raise ValueError(f"only {len(xs)} points in the fit window; spectrum is too coarsely binned")
+    sy = None if sigma_y is None else np.asarray(sigma_y, float)[sel]
+    base = float(np.median(ys))
+
+    def height(g, f):                                    # peak height above the typical level
+        near = np.abs(xs - g) < f / 2
+        return max((ys[near].max() if near.any() else ys.max()) - base, 1e-3)
+
+    if not double:
+        p0 = [height(guess, fwhm_exp), guess, sig_exp] + ([base] if offset else [])
+        lower = [0.0, guess - mu_tol, width_range[0] * sig_exp] + ([-np.inf] if offset else [])
+        upper = [np.inf, guess + mu_tol, width_range[1] * sig_exp] + ([np.inf] if offset else [])
+        popt, pcov = curve_fit(gauss, xs, ys, p0=p0, bounds=(lower, upper), sigma=sy,
+                               absolute_sigma=sy is not None, max_nfev=20000)
+        perr = np.sqrt(np.diag(pcov))
+        J = np.array([popt[2], 0.0, popt[0]]) * scale
+        return {
+            "yield": popt[0] * popt[2] * scale, "yield_err": np.sqrt(J @ pcov[:3, :3] @ J),
+            "mu": popt[1], "mu_err": perr[1],
+            "fwhm": FWHM_PER_SIGMA * popt[2], "fwhm_err": FWHM_PER_SIGMA * perr[2],
+            "popt": popt, "x": xs, "y": ys,
+            "model": lambda xx: gauss(np.asarray(xx, float), *popt),
+        }
+
+    # double: theta = [A1, mu1, A2, offset] (+ [mu2, s2] if fit_direct); s1 = s2*sqrt(mu1/mu2)
+    def unpack(theta):
+        a1, mu1, a2, c = theta[:4]
+        m2, sg2 = (theta[4], theta[5]) if fit_direct else (mu2, s2)
+        return a1, mu1, a2, c, m2, sg2, sg2 * np.sqrt(mu1 / m2)
+
+    def model(xx, *theta):
+        a1, mu1, a2, c, m2, sg2, s1 = unpack(theta)
+        return gauss(xx, a1, mu1, s1) + gauss(xx, a2, m2, sg2) + c
+
+    p0 = [height(guess, fwhm_exp), guess, height(mu2, fwhm2), base if offset else 0.0]
+    lower = [0.0, guess - mu_tol, 0.0, -np.inf]
+    upper = [np.inf, guess + mu_tol, np.inf, np.inf]
+    if not offset:
+        lower[3], upper[3], p0[3] = -1e-9, 1e-9, 0.0
+    if fit_direct:                                       # let the direct peak float
+        p0 += [mu2, s2]
+        lower += [mu2 - mu_tol, width_range[0] * s2]
+        upper += [mu2 + mu_tol, width_range[1] * s2]
+    popt, pcov = curve_fit(model, xs, ys, p0=p0, bounds=(lower, upper), sigma=sy,
+                           absolute_sigma=sy is not None, max_nfev=20000)
+    a1, mu1, a2, c, m2, sg2, s1 = unpack(popt)
+
+    def derived(theta):
+        a1_, mu1_, a2_, _, m2_, sg2_, s1_ = unpack(theta)
+        return np.array([a1_ * s1_ * scale, a2_ * sg2_ * scale, s1_])
+
+    def err_of(k):                                       # delta method, numerical gradient
+        g = np.zeros(len(popt))
+        for j in range(len(popt)):
+            h = 1e-6 * max(abs(popt[j]), 1.0)
+            tp, tm = popt.copy(), popt.copy()
+            tp[j] += h
+            tm[j] -= h
+            g[j] = (derived(tp)[k] - derived(tm)[k]) / (2 * h)
+        return float(np.sqrt(max(g @ pcov @ g, 0.0)))
+
     perr = np.sqrt(np.diag(pcov))
-
-    # calculate yield under Gaussian peak in energy axis
-    scale = np.sqrt(2 * np.pi) / bin_width                 # (counts/bin x keV) -> counts
-    yield_ = popt[0] * popt[2] * scale                     # A * sigma * sqrt(2 pi) / bin_width
-    J = np.array([popt[2], 0.0, popt[0]]) * scale          # d(yield)/d(amp, mu, sigma)
-    yield_err = np.sqrt(J @ pcov[:3, :3] @ J)              # err = sqrt(variance) = sqrt(J^T C J) 
-
     return {
-        "amp": popt[0], "mu": popt[1], "mu_err": perr[1],
-        "fwhm": FWHM_PER_SIGMA * popt[2], "fwhm_err": FWHM_PER_SIGMA * perr[2],
-        "popt": popt, "x": x, "y": ys, "model": lambda xx: gauss(xx, *popt),
-        "yield": (yield_, yield_err)
+        "yield": a1 * s1 * scale, "yield_err": err_of(0),
+        "yield_direct": a2 * sg2 * scale, "yield_direct_err": err_of(1),
+        "mu": mu1, "mu_err": perr[1],
+        "fwhm": FWHM_PER_SIGMA * s1, "fwhm_err": FWHM_PER_SIGMA * err_of(2),  # tied, not fitted
+        "mu_direct": m2, "fwhm_direct": FWHM_PER_SIGMA * sg2,
+        "popt": np.array([a1, mu1, s1, a2, m2, sg2, c]), "x": xs, "y": ys,
+        "model": lambda xx: model(np.asarray(xx, float), *popt),
+        "compton_curve": lambda xx: gauss(np.asarray(xx, float), a1, mu1, s1),
+        "direct_curve": lambda xx: gauss(np.asarray(xx, float), a2, m2, sg2),
     }
 
 
@@ -214,58 +260,119 @@ def fit_peak(x, counts,  guess, fwhm_exp, bin_width, offset=False, sigma_y=None,
     }
 
 def main():
-    # angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
-    angles = ["10", "20", "30", "40", "50", "60", "70", "80", "90"]
-    peak_energies, energy_errs, energy_errs_indep, yield_values = [], [], [], []
+    angles = ["10", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "40", "50", "60", "70", "80", "90"]
+    # angles = ["10", "20", "30", "40", "50", "60", "70", "80", "90"]
+    peak_energies, energy_errs, energy_errs_indep, yield_values, yield_errs = [], [], [], [], []
     plot_configs = {}
+
+    subtracted_file = "Grad26/cs137_subtracted/cs137_subtracted_angle_0.txt"
+    print(f"Loading " + subtracted_file)
+    ch0, counts0 = load_spectrum(subtracted_file)
+
+    # convert to energies
+    energies0 = []
+    for val in ch0:
+        energies0.append(calib(val))
+    
+    energies0 = np.array(energies0, dtype=float)
+    err = np.nan
+    
+    # perform the gaussian fitting to find the peak energy
+    r0 = fit_peak_bounded(energies0, counts0, 661.657, FWHM_662, np.median(np.diff(energies0)))
+    direct_peak = {"mu": r0["mu"], "sigma": r0["fwhm"] / 2.3548}
+    MANUAL_OFFSET = {30: 0, 40: 150, 50: 150, 60: 100, 70: 100, 80: 70, 90: 120}   # your values
+
 
     for (angle, (centroid_guess, hw)) in PEAKS.items():
         subtracted_file = "Grad26/cs137_subtracted/cs137_subtracted_angle_" + str(angle) + ".txt"
         print(f"Loading " + subtracted_file)
         ch, counts = load_spectrum(subtracted_file)
 
+        # load no target file
+        subtracted_nt_file = "Grad26/cs137_subtracted/cs137_subtracted_angle_" + str(angle) + "_no_target.txt"
+        print(f"Loading " + subtracted_nt_file)
+        ch_nt, counts_nt = load_spectrum(subtracted_nt_file)
+
         # convert to energies
-        energies = []
+        energies, energies_nt = [], []
         for val in ch:
             energies.append(calib(val))
+        for val in ch_nt:
+            energies_nt.append(calib(val))
 
         energies = np.array(energies, dtype=float)
+        energies_nt = np.array(energies_nt, dtype=float)
         err = np.nan
-
-        energies = np.array(energies, dtype=int)
 
         # perform the gaussian fitting to find the peak energy
         E_guess, fwhm_exp = expected_peak(angle)
         print(E_guess, fwhm_exp)
-        r = fit_peak_bounded(energies, counts, E_guess, fwhm_exp, bin_width=coeffs["values"][0])
+        bin_width = np.median(np.diff(energies))
+        use_double = 10 <= angle <= 30
+        # baseline (counts per bin) you read off each plot, next to the peak
+        MANUAL_OFFSET = {30: 0, 40: 0, 50: 0, 60: 0, 70: 0, 80: 0, 90: 0}   # your values
+        # # MANUAL_OFFSET = {20: 0, 30: 0, 40: 0, 50: 0, 60: 0, 70: 0, 80: 0, 90: 0}   # your values
+
+        off = MANUAL_OFFSET.get(angle)
+        # if off is None:
+        #     r = fit_peak_bounded(energies, counts, E_guess, fwhm_exp, bin_width,
+        #                         double=use_double, direct=direct_peak if use_double else None,
+        #                         fit_direct=use_double)
+        # else:
+        if 10 <= angle <= 30:
+            r = fit_peak_bounded(energies, counts, E_guess, fwhm_exp + 5, bin_width,
+                                    double=use_double, direct=direct_peak if use_double else None,
+                                    fit_direct=use_double)
+        else:
+            r = fit_peak_bounded(energies, counts, E_guess, fwhm_exp + 25, bin_width, offset=False,
+                                                double=use_double, direct=direct_peak if use_double else None,
+                                                fit_direct=use_double)
+
+
+        # fit the no target runs
+
+
+
         # r = fit_peak(energies, counts, E_guess, fwhm_exp, bin_width=coeffs["values"][0])
 
         
         # r = fit_peak(ch, counts, centroid_guess, hw)
+
+        # bin_width = np.median(np.diff(energies))                 # keV per rebinned bin
+        # sigma_E = direct_peak["sigma"] * np.sqrt(E_guess / 661.657)   # resolution at this energy
+        # if angle >= 10:
+        #     r = fit_peak_coarse(energies, counts, E_guess, fwhm_exp, bin_width, sigma=sigma_E, hw_factor=4.0)
+        # else:
+        #     r = fit_peak_coarse(energies, counts, E_guess, fwhm_exp, bin_width, sigma=sigma_E)
+
             
-        mean, err, fwhm, fwhm_err, popt, yield_exact = r["mu"], r["mu_err"], r["fwhm"], r["fwhm_err"], r["popt"], r["yield"]
+        mean, err, popt, yield_exact, yield_err = r["mu"], r["mu_err"], r["popt"], r["yield"], r["yield_err"]
         print("angle: ", str(angle))
         print("centroid (keV): ", str(mean))
-        print("fwhm: ", fwhm)
+        print("E guess: ", str(E_guess))
+        # print("fwhm: ", fwhm)
 
         # uncertainty calculations
         # per-angle window/model systematic: refit with different settings, take the spread
         # mus = [fit_peak_bounded(energies, counts, E_guess, fwhm_exp, bin_width=coeffs["values"][0],
         #                         offset=o, hw_factor=h)["mu"]
         #     for h in (1.5, 2.0, 2.5) for o in (False, True)]
-        mus = [fit_peak(energies, counts, E_guess, fwhm_exp, bin_width=coeffs["values"][0], hw_factor=h)["mu"]
-                    for h in (1.5, 2.0, 2.5) for o in (False, True)]
-        sigma_win = np.std(mus, ddof=1)
+        # mus = [fit_peak(energies, counts, E_guess, fwhm_exp, bin_width=coeffs["values"][0], hw_factor=h)["mu"]
+        #             for h in (1.5, 2.0, 2.5) for o in (False, True)]
+        # sigma_win = np.std(mus, ddof=1)
 
         # sigma_stat = 1.2 * err            # my simulation: the fit's formal error is ~20% low
         sigma_cal  = coeffs["sys_err"]    # calibration residual RMS
         sigma_slope = mean * (slope_unc / slope)           # calibration slope uncertainty
-        combined_error = quad_sum(err, sigma_win, sigma_cal, sigma_slope)
+        combined_error = quad_sum(err, sigma_cal, sigma_slope)
+        print(err, sigma_cal, sigma_slope)
+        print(combined_error)
         
         peak_energies.append(mean)
         energy_errs.append(combined_error)
         energy_errs_indep.append(err) # used for the ODR fitting to find slope and y-intercept
         yield_values.append(yield_exact)
+        yield_errs.append(yield_err)
         
         # plotting the individual fits
         hw = 2.0 * fwhm_exp                          # the half-width the fit used (hw_factor = 2.0)
@@ -277,16 +384,17 @@ def main():
         ax1.step(x, y, color="C7", alpha=0.7, linewidth=2, label="subtracted")
 
         mu, sigma = r["popt"][1], r["popt"][2]
-        x_fit = np.linspace(mu - 3 * sigma, mu + 3 * sigma, 400)
+        # x_fit = np.linspace(mu - 3 * sigma, mu + 3 * sigma, 400)
         x_fit = np.linspace(energies, 400)
-        ax1.plot(x_fit, r["model"](x_fit), color="C3", label="fit")
+        y_fit = r["model"](x_fit) + (off or 0)
+        ax1.plot(x_fit, y_fit, color="C3", label="fit")
         ax1.set_title("Cs-137 Subtracted counts with fitting for angle=" + str(angle))
         ax1.set_xlabel('Energy (keV)', fontsize=7)
         ax1.set_ylabel('Counts', fontsize=7)
         # ax1.axvspan(r["x"][0], r["x"][-1], color="C0", alpha=0.07, label="fit window")
 
         # store plot info in a dictionary to combine into one 3x3 plot for all angles and fits
-        plot_configs[angle] = (x, y, x_fit, r["model"](x_fit))
+        plot_configs[angle] = (x, y, x_fit, y_fit)
         fig.savefig("plots/cs137_data_runs/cs137_angle_" + str(angle) + "_fitted.pdf", format="pdf", bbox_inches="tight")
         fig.clf()
 
@@ -303,36 +411,34 @@ def main():
     # print(peak_channels)
     # print(channel_errs)
     
-    fig, axs = plt.subplots(3, 3)
+    # plot the fits for each angle in two 3x3 plots
 
-    # plot the fits for each angle in one 3x3 plot
-    i = 0
-    for (angle, (x, y, x_fit, y_fit)) in plot_configs.items():
-        angle = str(angle)
-        if angle in ["10", "20", "30"]:
-            axs[0, i%3].step(x, y, color='C7', alpha=0.7, linewidth=2, label='background subtracted')
-            axs[0, i%3].plot(x_fit, y_fit, color='C3', label='fit')
-            axs[0, i%3].set_title('Angle = ' + angle + ' deg', fontsize=9)
-        elif angle in ["40", "50", "60"]:
-            axs[1, i%3].plot(x, y, color='C7', alpha=0.7, linewidth=2, label='background subtracted')
-            axs[1, i%3].plot(x_fit, y_fit, color='C3', label='fit')
-            axs[1, i%3].set_title('Angle = ' + angle + ' deg', fontsize=9)
-        elif angle in ["70", "80", "90"]:
-            axs[2, i%3].plot(x, y, color='C7', alpha=0.7, linewidth=2, label='background subtracted')
-            axs[2, i%3].plot(x_fit, y_fit, color='C3', label='fit')
-            axs[2, i%3].set_title('Angle = ' + angle + ' deg', fontsize=9)
-        i += 1
+    GRID_MAIN = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    GRID_FINE = [21, 22, 23, 24, 25, 26, 27, 28, 29]
 
-    for ax in axs.flat:
-        ax.set_xlabel('Energy (keV)', fontsize=7)
-        ax.set_ylabel('Counts', fontsize=7)
-        ax.tick_params(axis='both', which='both', labelsize=7) 
-        ax.grid(True, alpha=0.3)
-        if LOG_Y:
-            ax.set_yscale("log", nonpositive="clip")
+    fig,  axs  = plt.subplots(3, 3)
+    fig1, axs1 = plt.subplots(3, 3)
 
+    for angle, (x, y, x_fit, y_fit) in plot_configs.items():
+        a = int(angle)
+        if a in GRID_MAIN:
+            r, c = divmod(GRID_MAIN.index(a), 3)
+            ax = axs[r, c]
+        elif a in GRID_FINE:
+            r, c = divmod(GRID_FINE.index(a), 3)
+            ax = axs1[r, c]
+        else:
+            continue
+
+        ax.step(x, y, color='C7', alpha=0.7, linewidth=2, label='background subtracted')
+        ax.plot(x_fit, y_fit, color='C3', label='fit')
+        ax.set_title(f'Angle = {a} deg', fontsize=9)
+    
     fig.tight_layout()
     fig.savefig("plots/cs137_data_runs/cs137_subtracted_counts_w_fitting.pdf", format="pdf", bbox_inches="tight")
+
+    fig1.tight_layout()
+    fig1.savefig("plots/cs137_data_runs/cs137_subtracted_counts_21_29_w_fitting.pdf", format="pdf", bbox_inches="tight")
 
     # plotting e over angle
     x = np.array(angles, dtype=int)
@@ -405,7 +511,6 @@ def main():
     Z = 13 #atomic number of aluminum
     crystal_area = np.pi*2.54**2
     dOmega = crystal_area/(r)**2
-    print(dOmega)
     dOmega_err = 2*1/r * dOmega
     N = np.pi * (d/2)**2 * h * p * N0 * Z / A
     # print(N)
@@ -413,16 +518,18 @@ def main():
 
     # read off the peak/total ratio and absorption efficiency for the detector at each angle and calculate the scale factor to get the corrected yield
     # scale factors read off plots
-    scale_factors = np.array([2.886, 2.564, 2.404, 2.077, 1.838, 1.696, 1.489, 1.400, 1.302], dtype=float)
-    scale_factors_err = np.array([0.1016, 0.0842, 0.0763, 0.0608, 0.0503, 0.0446, 0.0366, 0.0333, 0.0298], dtype=float) 
+    # scale_factors = np.array([2.886, 2.564, 2.404, 2.077, 1.838, 1.696, 1.489, 1.400, 1.302], dtype=float)
+    scale_factors = np.array([2.886, 2.564, 2.564, 2.514, 2.514, 2.514, 2.482, 2.482, 2.434, 2.434, 2.434, 2.404, 2.077, 1.838, 1.696, 1.489, 1.400, 1.302], dtype=float)
+    # scale_factors_err = np.array([0.1016, 0.0842, 0.0763, 0.0608, 0.0503, 0.0446, 0.0366, 0.0333, 0.0298], dtype=float) 
+    scale_factors_err = np.array([0.3465, 0.39, 0.39, 0.3978, 0.3978, 0.3978, 0.4029, 0.4029, 0.4108, 0.4108, 0.4108, 0.416, 0.4814, 0.544, 0.5896, 0.6716, 0.7144, 0.768], dtype=float) 
     corr_yield, corr_yield_err = [], []
 
-    yield_ = list(zip(*yield_values))[0]
-    yield_err = list(zip(*yield_values))[1]
+    print(yield_values)
+    print(yield_errs)
     for i in range(len(scale_factors)):
-        val = yield_values[i][0] * scale_factors[i]
-        val = yield_[i]
-        err = (yield_err[i]/yield_[i] + scale_factors_err[i]/scale_factors[i]) * val
+        val = yield_values[i] * scale_factors[i]
+        # val = yield_values[i]
+        err = (yield_errs[i]/yield_values[i] + scale_factors_err[i]/scale_factors[i]) * val
         corr_yield.append(val)
         corr_yield_err.append(err)
 
@@ -451,10 +558,10 @@ def main():
         kn_cross_sections.append(klein_nishina(x[i], gamma) * 10**27)
 
     # plot the cross section over angle and include Thompson and Klein-Nishina predictions
-    plt.plot(x[2:], cross_sections[2:], label='data', zorder=2)
+    plt.plot(x[1:], cross_sections[1:], label='data', zorder=2)
     plt.plot(x, th_cross_sections, label='Thompson', color='C1')
     plt.plot(x, kn_cross_sections, label='Klein-Nishina', color='C2')
-    plt.errorbar(x[2:], cross_sections[2:], yerr=cross_sections_err[2:], xerr=angle_err, label='error', fmt='none', color='C7', zorder=1)
+    plt.errorbar(x[1:], cross_sections[1:], yerr=cross_sections_err[1:], xerr=angle_err, label='error', fmt='none', color='C7', zorder=1)
     plt.title("Cross section over angle")
     plt.xlabel("Scattering angle (deg)")
     plt.ylabel(r'$d\sigma/d\Omega (10^{-27} (\mathrm{cm}^2/\mathrm{sr})$')
@@ -463,7 +570,7 @@ def main():
 
     # print table of yields and comparisons with theory
     print("angle  yield    err    SF  corr yield  xsec   KN    ratio")
-    for a, (y, ye), sf, k in zip(x, yield_values, scale_factors, kn_cross_sections):   # kn_vals in 1e-27 cm2/sr
+    for a, y, ye, sf, k in zip(x, yield_values, yield_errs, scale_factors, kn_cross_sections):   # kn_vals in 1e-27 cm2/sr
         xs = y * sf / (dOmega * N * I0 * 300) * 1e27
         print(f"{a:5d} {y:7.0f} {ye:6.0f} {sf:5.2f} {y*sf:7.0f} {xs:7.1f} {k:6.1f} {xs/k:6.2f}")
 
